@@ -9,7 +9,6 @@ from pathlib import Path
 import os
 import io
 import hashlib
-from datetime import datetime
 import re
 
 # ==============================================================================
@@ -25,61 +24,27 @@ st.sidebar.markdown(
 
 st.markdown("""
 <style>
-  .gauge-head {
-    font-size: 18px; font-weight: 700; color: #111;
-    line-height: 1.25; margin: 2px 4px 6px;
-    white-space: normal;
-    word-break: break-word;
-  }
-  .gauge-sub  {
-    font-size: 16px; font-weight: 600;
-    color: #374151; margin: 0 4px 6px;
-  }
+  .gauge-head { font-size: 18px; font-weight: 700; color: #111; line-height: 1.25; margin: 2px 4px 6px; white-space: normal; word-break: break-word; }
+  .gauge-sub  { font-size: 16px; font-weight: 600; color: #374151; margin: 0 4px 6px; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <style>
-  /* === Metric cards: 2/3 label size, pastel colors, row spacing = label size === */
-  :root{
-    --metric-value-size: 2.6rem;
-    --metric-label-size: calc(2.6rem * 2/3);
-  }
-  .metric-box{
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
-    padding: 16px;
-    text-align: center;
-    color: #4f4f4f;
-    box-shadow: 0 2px 6px rgba(0,0,0,.05);
-    display: flex; flex-direction: column; justify-content: center;
-    min-height: 120px;
-    background: transparent;
-    margin-bottom: var(--metric-label-size);
-  }
+  :root{ --metric-value-size: 2.6rem; --metric-label-size: calc(2.6rem * 2/3); }
+  .metric-box{ border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px; text-align: center; color: #4f4f4f;
+               box-shadow: 0 2px 6px rgba(0,0,0,.05); display: flex; flex-direction: column; justify-content: center;
+               min-height: 120px; background: transparent; margin-bottom: var(--metric-label-size); }
   .metric-box.metric-box-1{ background:#e0f7fa !important; }
   .metric-box.metric-box-2{ background:#e8f5e9 !important; }
   .metric-box.metric-box-3{ background:#fce4ec !important; }
   .metric-box.metric-box-4{ background:#fffde7 !important; }
   .metric-box.metric-box-5{ background:#f3e5f5 !important; }
   .metric-box.metric-box-6{ background:#e3f2fd !important; }
-  .metric-box .label{
-    font-size: var(--metric-label-size) !important;
-    font-weight: 700;
-    line-height: 1.15;
-    margin-bottom: 6px;
-    color: #374151;
-  }
-  .metric-box .value{
-    font-size: var(--metric-value-size) !important;
-    font-weight: 800;
-    line-height: 1.1;
-  }
+  .metric-box .label{ font-size: var(--metric-label-size) !important; font-weight: 700; line-height: 1.15; margin-bottom: 6px; color: #374151; }
+  .metric-box .value{ font-size: var(--metric-value-size) !important; font-weight: 800; line-height: 1.1; }
   @media (max-width: 900px){
-    :root{
-      --metric-value-size: 2.2rem;
-      --metric-label-size: calc(2.2rem * 2/3);
-    }
+    :root{ --metric-value-size: 2.2rem; --metric-label-size: calc(2.2rem * 2/3); }
   }
 </style>
 """, unsafe_allow_html=True)
@@ -158,19 +123,18 @@ def load_and_prepare_data_from_bytes(file_bytes: bytes, filename: str) -> pd.Dat
     return df
 
 
-# ---- แหล่งข้อมูล: อัปโหลดมาก่อน ถ้าไม่อัปให้ตกไปใช้ไฟล์เดิม (ถ้ามี) ----
+# ---- อัปโหลดไฟล์ (แถบซ้าย) + Fallback เป็น mpxo.xlsx ----
 st.sidebar.markdown("### อัปโหลดไฟล์ข้อมูล")
 uploaded = st.sidebar.file_uploader("อัปโหลด .xlsx / .xls / .csv", type=["xlsx", "xls", "csv"])
 
-# ไฟล์ CSV เดิม (fallback) ที่หน้าอื่นอาจจะใช้อยู่
-DATA_FILE = "patient_satisfaction_data.csv"
+DATA_FILE = "mpxo.xlsx"  # default
 
 if uploaded is not None:
-    # ใช้ไฟล์ที่อัปโหลด
+    # ใช้ไฟล์ที่อัปโหลดเป็นแหล่งข้อมูลทันที
     file_bytes = uploaded.getbuffer().tobytes()
     df_original = load_and_prepare_data_from_bytes(file_bytes, uploaded.name)
 
-    # (ตัวเลือก) บันทึกสำเนาไฟล์อัปโหลดลงดิสก์ + ทำ CSV ไว้ให้หน้าอื่นใช้ร่วมกัน
+    # (ตัวเลือก) บันทึกสำเนาไฟล์อัปโหลดลงดิสก์
     SAVE_DIR = "data_uploads"
     os.makedirs(SAVE_DIR, exist_ok=True)
     save_path = os.path.join(SAVE_DIR, f"opd_latest{Path(uploaded.name).suffix.lower()}")
@@ -180,20 +144,20 @@ if uploaded is not None:
     except Exception as e:
         st.info(f"บันทึกไฟล์อัปโหลดไม่สำเร็จ: {e}")
 
-    # ถ้าหน้าอื่นยังอ่าน csv เดิมอยู่และอยากให้ใช้ข้อมูลล่าสุดด้วย:
+    # เขียนทับ DATA_FILE ให้เป็น .xlsx เสมอ (ถ้าต้องการแชร์ให้หน้าอื่น ๆ)
     try:
         if uploaded.name.lower().endswith((".xlsx", ".xls")):
-            tmp_df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, engine="openpyxl")
-            tmp_df.to_csv(DATA_FILE, index=False)
-        elif uploaded.name.lower().endswith(".csv"):
-            # เขียนทับไฟล์ CSV เดิมให้เป็นเวอร์ชันล่าสุด
             with open(DATA_FILE, "wb") as w:
                 w.write(file_bytes)
+        elif uploaded.name.lower().endswith(".csv"):
+            tmp_df = pd.read_csv(io.BytesIO(file_bytes))
+            with pd.ExcelWriter(DATA_FILE, engine="openpyxl") as writer:
+                tmp_df.to_excel(writer, index=False, sheet_name="Sheet1")
     except Exception as e:
-        st.info(f"บันทึกเป็น CSV ไม่สำเร็จ: {e}")
+        st.info(f"บันทึกเป็น .xlsx ไม่สำเร็จ: {e}")
 
 else:
-    # fallback: อ่านจากไฟล์เดิมถ้ามี
+    # fallback: โหลด mpxo.xlsx ถ้ามี
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "rb") as f:
             file_bytes = f.read()
@@ -201,9 +165,9 @@ else:
     else:
         df_original = pd.DataFrame()
 
-# ถ้าไม่มีข้อมูลเลย ให้แจ้งเตือนและหยุด
+# ถ้าไม่มีข้อมูลเลย ให้แจ้งเตือนและหยุด (ไม่มีหน้าอื่นแล้ว Landing คือ Dashboard)
 if df_original.empty:
-    st.warning("ยังไม่มีข้อมูล ให้ลองอัปโหลดไฟล์ทางแถบด้านซ้าย (.xlsx/.xls/.csv) หรือเพิ่มไฟล์ patient_satisfaction_data.csv")
+    st.warning("ยังไม่มีข้อมูล ให้ลองอัปโหลดไฟล์ทางแถบด้านซ้าย (.xlsx/.xls/.csv) หรือเพิ่มไฟล์ mpxo.xlsx ในโฟลเดอร์โปรเจกต์")
     st.stop()
 
 
@@ -328,11 +292,12 @@ def plot_gauge_for_column_numseries(
 
 
 # ==============================================================================
-# MAIN APP
+# DASHBOARD (Landing Page)
 # ==============================================================================
+st.title("DASHBOARD (OPD)")
+
 # --- Sidebar: ช่วงวันที่และตัวกรอง ---
 st.sidebar.markdown("---")
-
 min_date = df_original['date_col'].min().strftime('%d %b %Y')
 max_date = df_original['date_col'].max().strftime('%d %b %Y')
 st.sidebar.markdown(f"""
@@ -343,10 +308,8 @@ st.sidebar.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.sidebar.header("ตัวกรองข้อมูล (Filter)")
-
 available_departments = ['ภาพรวมทั้งหมด'] + sorted(df_original['หน่วยงาน'].dropna().unique().tolist()) if 'หน่วยงาน' in df_original.columns else ['ภาพรวมทั้งหมด']
 selected_department = st.sidebar.selectbox("เลือกหน่วยงาน:", available_departments)
-
 time_filter_option = st.sidebar.selectbox("เลือกช่วงเวลา:", ["ทั้งหมด", "เลือกตามปี", "เลือกตามไตรมาส", "เลือกตามเดือน"])
 
 df_filtered = df_original.copy()
@@ -373,9 +336,6 @@ if selected_department != 'ภาพรวมทั้งหมด' and 'หน�
 if df_filtered.empty:
     st.warning("ไม่พบข้อมูลตามตัวกรองที่ท่านเลือก")
     st.stop()
-
-# --- Page Title ---
-st.title(f"DASHBOARD (OPD): {selected_department}")
 
 # --- Metrics ---
 satisfaction_score_map = {'มากที่สุด': 5, 'มาก': 4, 'ปานกลาง': 3, 'น้อย': 2, 'น้อยมาก': 1}
@@ -407,32 +367,19 @@ most_common_health_status = (
 )
 
 st.markdown("##### ภาพรวม")
-row1 = st.columns(3)
-row2 = st.columns(3)
+row1 = st.columns(3); row2 = st.columns(3)
 with row1[0]:
-    st.markdown(
-        f'<div class="metric-box metric-box-1"><div class="label">จำนวนผู้ตอบ</div><div class="value">{total_responses:,}</div></div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-box metric-box-1"><div class="label">จำนวนผู้ตอบ</div><div class="value">{total_responses:,}</div></div>', unsafe_allow_html=True)
 with row1[1]:
-    st.markdown(
-        f'<div class="metric-box metric-box-2"><div class="label">คะแนนพึงพอใจเฉลี่ย</div><div class="value">{display_avg_satisfaction}</div></div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-box metric-box-2"><div class="label">คะแนนพึงพอใจเฉลี่ย</div><div class="value">{display_avg_satisfaction}</div></div>', unsafe_allow_html=True)
 with row1[2]:
-    st.markdown(
-        f'<div class="metric-box metric-box-6"><div class="label">สุขภาพผู้ป่วยโดยรวม</div><div class="value" style="font-size: 1.8rem;">{most_common_health_status}</div></div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-box metric-box-6"><div class="label">สุขภาพผู้ป่วยโดยรวม</div><div class="value" style="font-size: 1.8rem;">{most_common_health_status}</div></div>', unsafe_allow_html=True)
 with row2[0]:
-    st.markdown(
-        f'<div class="metric-box metric-box-3"><div class="label">% กลับมาใช้บริการ</div><div class="value">{return_service_pct}</div></div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-box metric-box-3"><div class="label">% กลับมาใช้บริการ</div><div class="value">{return_service_pct}</div></div>', unsafe_allow_html=True)
 with row2[1]:
-    st.markdown(
-        f'<div class="metric-box metric-box-4"><div class="label">% การบอกต่อ</div><div class="value">{recommend_pct}</div></div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-box metric-box-4"><div class="label">% การบอกต่อ</div><div class="value">{recommend_pct}</div></div>', unsafe_allow_html=True)
 with row2[2]:
-    st.markdown(
-        f'<div class="metric-box metric-box-5"><div class="label">% ไม่พึงพอใจ</div><div class="value">{dissatisfied_pct}</div></div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-box metric-box-5"><div class="label">% ไม่พึงพอใจ</div><div class="value">{dissatisfied_pct}</div></div>', unsafe_allow_html=True)
 
 st.markdown("---")
 
