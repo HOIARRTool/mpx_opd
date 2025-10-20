@@ -7,6 +7,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import os
+import io
+import hashlib
 from datetime import datetime
 import re
 
@@ -26,11 +28,11 @@ st.markdown("""
   .gauge-head {
     font-size: 18px; font-weight: 700; color: #111;
     line-height: 1.25; margin: 2px 4px 6px;
-    white-space: normal;      /* ให้ขึ้นบรรทัดใหม่ตามธรรมชาติ */
-    word-break: break-word;      /* ไทยไม่มีช่องว่าง ให้ตัดเมื่อชนขอบคอลัมน์ */
+    white-space: normal;
+    word-break: break-word;
   }
   .gauge-sub  {
-    font-size: 16px; font-weight: 600;  /* ← ขยายขนาด n =  */
+    font-size: 16px; font-weight: 600;
     color: #374151; margin: 0 4px 6px;
   }
 </style>
@@ -39,13 +41,10 @@ st.markdown("""
 st.markdown("""
 <style>
   /* === Metric cards: 2/3 label size, pastel colors, row spacing = label size === */
-
   :root{
-    --metric-value-size: 2.6rem;            /* ขนาดตัวเลข (ปรับได้) */
-    --metric-label-size: calc(2.6rem * 2/3);    /* 2/3 ของตัวเลข */
+    --metric-value-size: 2.6rem;
+    --metric-label-size: calc(2.6rem * 2/3);
   }
-
-  /* กล่องหลัก */
   .metric-box{
     border: 1px solid #e5e7eb;
     border-radius: 14px;
@@ -55,21 +54,17 @@ st.markdown("""
     box-shadow: 0 2px 6px rgba(0,0,0,.05);
     display: flex; flex-direction: column; justify-content: center;
     min-height: 120px;
-    background: transparent;            /* กันพื้นขาวทับสีพาสเทล */
-    margin-bottom: var(--metric-label-size);    /* ช่องไฟ = ความสูงตัวหนังสือ */
+    background: transparent;
+    margin-bottom: var(--metric-label-size);
   }
-
-  /* สีพาสเทล (บังคับคืนสี) */
   .metric-box.metric-box-1{ background:#e0f7fa !important; }
   .metric-box.metric-box-2{ background:#e8f5e9 !important; }
   .metric-box.metric-box-3{ background:#fce4ec !important; }
   .metric-box.metric-box-4{ background:#fffde7 !important; }
   .metric-box.metric-box-5{ background:#f3e5f5 !important; }
   .metric-box.metric-box-6{ background:#e3f2fd !important; }
-
-  /* ตัวหนังสือ */
   .metric-box .label{
-    font-size: var(--metric-label-size) !important;  /* = 2/3 ของตัวเลข */
+    font-size: var(--metric-label-size) !important;
     font-weight: 700;
     line-height: 1.15;
     margin-bottom: 6px;
@@ -80,8 +75,6 @@ st.markdown("""
     font-weight: 800;
     line-height: 1.1;
   }
-
-  /* จอแคบ – ลดสเกลเล็กน้อย */
   @media (max-width: 900px){
     :root{
       --metric-value-size: 2.2rem;
@@ -93,15 +86,29 @@ st.markdown("""
 
 
 # ==============================================================================
-# DATA LOADING AND PREPARATION (ปรับปรุงใหม่)
+# DATA LOADING AND PREPARATION (รองรับอัปโหลด CSV/XLSX)
 # ==============================================================================
+def _hash_bytes(b: bytes) -> str:
+    return hashlib.md5(b).hexdigest() if b else "no-bytes"
 
 @st.cache_data
-def prepare_data(df):
+def load_and_prepare_data_from_bytes(file_bytes: bytes, filename: str) -> pd.DataFrame:
     """
-    รับ DataFrame ที่อ่านจากไฟล์แล้ว มาประมวลผล (Mapping, สร้างคอลัมน์เวลา)
+    อ่านไฟล์จาก bytes (xlsx/xls/csv) แล้วเตรียมคอลัมน์ที่ใช้ในแดชบอร์ด
+    ผูก cache ตามอาร์กิวเมนต์ file_bytes + filename อัตโนมัติ
     """
-    
+    if not file_bytes:
+        return pd.DataFrame()
+
+    try:
+        if filename.lower().endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(file_bytes))
+        else:
+            df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, engine="openpyxl")
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ข้อมูล: {e}")
+        return pd.DataFrame()
+
     # ----------------- Mapping ชื่อคอลัมน์ (OPD) -----------------
     column_mapping = {
         'หน่วยงานที่ท่านเข้ารับบริการ/ ต้องการประเมิน (เพื่อสะท้อนกลับหน่วยงานโดยตรง)': 'หน่วยงาน',
@@ -131,30 +138,80 @@ def prepare_data(df):
         '(หากมี) ความไม่พึงพอใจกรุณาระบุรายละเอียด เพื่อเป็นประโยชน์ในการปรับปรุง': 'รายละเอียดความไม่พึงพอใจ',
         'ความคาดหวังต่อบริการของโรงพยาบาลในภาพรวม': 'ความคาดหวังต่อบริการ'
     }
-    df = df.rename(columns=lambda c: column_mapping.get(c.strip(), c.strip()))
+    df = df.rename(columns=lambda c: column_mapping.get(str(c).strip(), str(c).strip()))
 
     # ----------------- Time fields -----------------
-    # *** เพิ่มการตรวจสอบคอลัมน์สำคัญ ***
-    if 'ประทับเวลา' not in df.columns:
-        st.error("ไม่พบคอลัมน์ 'ประทับเวลา' (Timestamp) ในไฟล์ที่อัปโหลด")
-        return pd.DataFrame() # คืนค่า DataFrame ว่าง
+    time_col = None
+    for cand in ['ประทับเวลา', 'Timestamp', 'เวลา', 'วันที่รับบริการ']:
+        if cand in df.columns:
+            time_col = cand
+            break
+    if not time_col:
+        st.error("ไม่พบคอลัมน์เวลาสำหรับอ้างอิง (เช่น 'ประทับเวลา' หรือ 'Timestamp')")
+        return pd.DataFrame()
 
-    df['date_col'] = pd.to_datetime(df['ประทับเวลา'], errors='coerce')
+    df['date_col'] = pd.to_datetime(df[time_col], errors='coerce')
     df = df.dropna(subset=['date_col'])
     df['เดือน'] = df['date_col'].dt.month
     df['ไตรมาส'] = df['date_col'].dt.quarter
     df['ปี'] = df['date_col'].dt.year
     return df
 
-# ==============================================================================
-# PLOTTING HELPERS (คงเดิมทั้งหมด)
-# ==============================================================================
 
-# --- 1) Heart Average Component ---
+# ---- แหล่งข้อมูล: อัปโหลดมาก่อน ถ้าไม่อัปให้ตกไปใช้ไฟล์เดิม (ถ้ามี) ----
+st.sidebar.markdown("### อัปโหลดไฟล์ข้อมูล")
+uploaded = st.sidebar.file_uploader("อัปโหลด .xlsx / .xls / .csv", type=["xlsx", "xls", "csv"])
+
+# ไฟล์ CSV เดิม (fallback) ที่หน้าอื่นอาจจะใช้อยู่
+DATA_FILE = "patient_satisfaction_data.csv"
+
+if uploaded is not None:
+    # ใช้ไฟล์ที่อัปโหลด
+    file_bytes = uploaded.getbuffer().tobytes()
+    df_original = load_and_prepare_data_from_bytes(file_bytes, uploaded.name)
+
+    # (ตัวเลือก) บันทึกสำเนาไฟล์อัปโหลดลงดิสก์ + ทำ CSV ไว้ให้หน้าอื่นใช้ร่วมกัน
+    SAVE_DIR = "data_uploads"
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    save_path = os.path.join(SAVE_DIR, f"opd_latest{Path(uploaded.name).suffix.lower()}")
+    try:
+        with open(save_path, "wb") as w:
+            w.write(file_bytes)
+    except Exception as e:
+        st.info(f"บันทึกไฟล์อัปโหลดไม่สำเร็จ: {e}")
+
+    # ถ้าหน้าอื่นยังอ่าน csv เดิมอยู่และอยากให้ใช้ข้อมูลล่าสุดด้วย:
+    try:
+        if uploaded.name.lower().endswith((".xlsx", ".xls")):
+            tmp_df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, engine="openpyxl")
+            tmp_df.to_csv(DATA_FILE, index=False)
+        elif uploaded.name.lower().endswith(".csv"):
+            # เขียนทับไฟล์ CSV เดิมให้เป็นเวอร์ชันล่าสุด
+            with open(DATA_FILE, "wb") as w:
+                w.write(file_bytes)
+    except Exception as e:
+        st.info(f"บันทึกเป็น CSV ไม่สำเร็จ: {e}")
+
+else:
+    # fallback: อ่านจากไฟล์เดิมถ้ามี
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "rb") as f:
+            file_bytes = f.read()
+        df_original = load_and_prepare_data_from_bytes(file_bytes, DATA_FILE)
+    else:
+        df_original = pd.DataFrame()
+
+# ถ้าไม่มีข้อมูลเลย ให้แจ้งเตือนและหยุด
+if df_original.empty:
+    st.warning("ยังไม่มีข้อมูล ให้ลองอัปโหลดไฟล์ทางแถบด้านซ้าย (.xlsx/.xls/.csv) หรือเพิ่มไฟล์ patient_satisfaction_data.csv")
+    st.stop()
+
+
+# ==============================================================================
+# PLOTTING HELPERS
+# ==============================================================================
 def render_average_heart_rating(avg_score: float, max_score: int = 5, responses: int | None = None):
-    """
-    แสดงหัวใจ 5 ดวง (เต็ม/บางส่วน/ว่าง) จากค่าเฉลี่ย พร้อมหัวข้อ Average rating และเลข 1–5 ใต้หัวใจ
-    """
+    """แสดงหัวใจ 5 ดวง (เต็ม/บางส่วน/ว่าง) จากค่าเฉลี่ย พร้อมหัวข้อและ n"""
     if pd.isna(avg_score):
         st.info("ยังไม่มีคะแนนเฉลี่ยให้แสดง")
         return
@@ -199,7 +256,7 @@ def render_average_heart_rating(avg_score: float, max_score: int = 5, responses:
     """
     st.markdown(component_html, unsafe_allow_html=True)
 
-# --- 2) Pie generic (ใช้บางที่) ---
+
 def plot_generic_pie_chart(df, column_name, title):
     if column_name not in df.columns or df[column_name].dropna().empty:
         st.info(f"ไม่มีข้อมูลสำหรับ '{title}'")
@@ -210,7 +267,7 @@ def plot_generic_pie_chart(df, column_name, title):
     fig.update_traces(textposition='inside', textinfo='percent+label', showlegend=True)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 3) Likert Normalizer (ให้คอลัมน์ 1 และ 7 โอเคแน่) ---
+
 LIKERT_MAP = {
     'มากที่สุด': 5, 'มาก': 4, 'ปานกลาง': 3, 'น้อย': 2, 'น้อยมาก': 1,
     ' มากที่สุด': 5, ' มาก': 4, ' ปานกลาง': 3, ' น้อย': 2, ' น้อยมาก': 1
@@ -221,17 +278,16 @@ def normalize_to_1_5(x):
     s = str(x).strip()
     if s in LIKERT_MAP:
         return LIKERT_MAP[s]
-    m = re.search(r'([1-5])', s)  # มีเลข 1–5 โผล่อยู่ในสตริง
+    m = re.search(r'([1-5])', s)
     if m:
         return int(m.group(1))
-    for k, v in LIKERT_MAP.items():  # มีคำไทยที่คุ้น ๆ แฝงอยู่
+    for k, v in LIKERT_MAP.items():
         base = k.strip()
         if base and base in s:
             return v
     return pd.NA
 
-# --- 4) Gauge (compact) ---
-# --- ฟังก์ชันวาดเกจ (เพิ่ม key) ---
+
 def plot_gauge_for_column_numseries(
     series_num, title: str,
     min_v: int = 1, max_v: int = 5,
@@ -249,10 +305,10 @@ def plot_gauge_for_column_numseries(
     st.markdown(f"<div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
 
     steps_4 = [
-        {'range': [1, 2], 'color': '#DC2626'},  # แดง
-        {'range': [2, 3], 'color': '#EA580C'},  # ส้ม
-        {'range': [3, 4], 'color': '#F59E0B'},  # เหลือง
-        {'range': [4, 5], 'color': '#16A34A'},  # เขียว
+        {'range': [1, 2], 'color': '#DC2626'},
+        {'range': [2, 3], 'color': '#EA580C'},
+        {'range': [3, 4], 'color': '#F59E0B'},
+        {'range': [4, 5], 'color': '#16A34A'},
     ]
 
     fig = go.Figure(go.Indicator(
@@ -271,44 +327,12 @@ def plot_gauge_for_column_numseries(
     st.plotly_chart(fig, use_container_width=True, key=key or f"gauge_{hash(title)}")
 
 
-
 # ==============================================================================
-# MAIN APP (ปรับปรุงใหม่)
+# MAIN APP
 # ==============================================================================
-
-# --- 1. เพิ่ม File Uploader ใน Sidebar ---
+# --- Sidebar: ช่วงวันที่และตัวกรอง ---
 st.sidebar.markdown("---")
-st.sidebar.header("อัปโหลดไฟล์ข้อมูล (Upload)")
-uploaded_file = st.sidebar.file_uploader(
-    "เลือกไฟล์ Excel (.xlsx) หรือ CSV (.csv)",
-    type=["xlsx", "csv"]
-)
 
-if uploaded_file is None:
-    st.warning("💡 กรุณาอัปโหลดไฟล์ข้อมูล Excel หรือ CSV ในแถบด้านข้าง (Sidebar) เพื่อเริ่มใช้งาน")
-    st.stop()
-
-# --- 2. ถ้ามีไฟล์อัปโหลด ให้ดำเนินการต่อ ---
-try:
-    if uploaded_file.name.endswith('.csv'):
-        df_raw = pd.read_csv(uploaded_file)
-    else:
-        df_raw = pd.read_excel(uploaded_file)
-    
-    # ส่ง DataFrame ดิบไปให้ฟังก์ชันใหม่ประมวลผล
-    df_original = prepare_data(df_raw.copy()) 
-
-except Exception as e:
-    st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ที่อัปโหลด: {e}")
-    st.stop()
-
-
-# --- 3. ตรวจสอบ df_original หลังประมวลผล ---
-if df_original.empty:
-    st.error("ข้อมูลในไฟล์ที่อัปโหลดว่างเปล่า หรือไม่พบคอลัมน์ 'ประทับเวลา' ที่จำเป็น")
-    st.stop()
-
-# --- Sidebar (ส่วนที่เหลือ - ทำงานหลังโหลดข้อมูลแล้ว) ---
 min_date = df_original['date_col'].min().strftime('%d %b %Y')
 max_date = df_original['date_col'].max().strftime('%d %b %Y')
 st.sidebar.markdown(f"""
@@ -317,10 +341,12 @@ st.sidebar.markdown(f"""
     <div class="value">{min_date} - {max_date}</div>
 </div>
 """, unsafe_allow_html=True)
+
 st.sidebar.header("ตัวกรองข้อมูล (Filter)")
 
-available_departments = ['ภาพรวมทั้งหมด'] + sorted(df_original['หน่วยงาน'].dropna().unique().tolist())
+available_departments = ['ภาพรวมทั้งหมด'] + sorted(df_original['หน่วยงาน'].dropna().unique().tolist()) if 'หน่วยงาน' in df_original.columns else ['ภาพรวมทั้งหมด']
 selected_department = st.sidebar.selectbox("เลือกหน่วยงาน:", available_departments)
+
 time_filter_option = st.sidebar.selectbox("เลือกช่วงเวลา:", ["ทั้งหมด", "เลือกตามปี", "เลือกตามไตรมาส", "เลือกตามเดือน"])
 
 df_filtered = df_original.copy()
@@ -338,39 +364,41 @@ if time_filter_option != "ทั้งหมด":
                          9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'}
             month_list = sorted(df_filtered['เดือน'].unique())
             selected_month_num = st.sidebar.selectbox("เลือกเดือน:", month_list,
-                                                        format_func=lambda x: month_map.get(x, x))
+                                                      format_func=lambda x: month_map.get(x, x))
             df_filtered = df_filtered[df_filtered['เดือน'] == selected_month_num]
-if selected_department != 'ภาพรวมทั้งหมด':
+
+if selected_department != 'ภาพรวมทั้งหมด' and 'หน่วยงาน' in df_filtered.columns:
     df_filtered = df_filtered[df_filtered['หน่วยงาน'] == selected_department]
+
 if df_filtered.empty:
     st.warning("ไม่พบข้อมูลตามตัวกรองที่ท่านเลือก")
     st.stop()
-
-# ==============================================================================
-# --- (ส่วนที่เหลือของแอป คงเดิมทั้งหมด) ---
-# ==============================================================================
 
 # --- Page Title ---
 st.title(f"DASHBOARD (OPD): {selected_department}")
 
 # --- Metrics ---
 satisfaction_score_map = {'มากที่สุด': 5, 'มาก': 4, 'ปานกลาง': 3, 'น้อย': 2, 'น้อยมาก': 1}
-df_filtered['คะแนนความพึงพอใจ'] = df_filtered['ความพึงพอใจโดยรวม'].map(satisfaction_score_map)
+if 'ความพึงพอใจโดยรวม' in df_filtered.columns:
+    df_filtered['คะแนนความพึงพอใจ'] = df_filtered['ความพึงพอใจโดยรวม'].map(satisfaction_score_map)
+else:
+    df_filtered['คะแนนความพึงพอใจ'] = pd.NA
+
 average_satisfaction_score = df_filtered['คะแนนความพึงพอใจ'].mean()
 display_avg_satisfaction = f"{average_satisfaction_score:.2f}" if pd.notna(average_satisfaction_score) else "N/A"
 total_responses = len(df_filtered)
 
 def calculate_percentage(df, col_name, positive_value='ใช่', decimals=1):
     if col_name in df.columns and not df[col_name].dropna().empty:
-        count = (df[col_name] == positive_value).sum()
+        count = (df[col_name].astype(str).str.strip() == positive_value).sum()
         total_count = df[col_name].notna().sum()
         if total_count > 0:
             return f"{(count / total_count) * 100:.{decimals}f}%"
     return "N/A"
 
 return_service_pct = calculate_percentage(df_filtered, 'กลับมารับบริการหรือไม่', decimals=1)
-recommend_pct = calculate_percentage(df_filtered, 'แนะนำผู้อื่นหรือไม่', decimals=1)
-dissatisfied_pct = calculate_percentage(df_filtered, 'มีความไม่พึงพอใจหรือไม่', positive_value='มี', decimals=2)
+recommend_pct     = calculate_percentage(df_filtered, 'แนะนำผู้อื่นหรือไม่', decimals=1)
+dissatisfied_pct  = calculate_percentage(df_filtered, 'มีความไม่พึงพอใจหรือไม่', positive_value='มี', decimals=2)
 
 most_common_health_status = (
     df_filtered['สุขภาพโดยรวม'].mode()[0]
@@ -381,29 +409,35 @@ most_common_health_status = (
 st.markdown("##### ภาพรวม")
 row1 = st.columns(3)
 row2 = st.columns(3)
-with row1[0]: st.markdown(
-    f'<div class="metric-box metric-box-1"><div class="label">จำนวนผู้ตอบ</div><div class="value">{total_responses:,}</div></div>',
-    unsafe_allow_html=True)
-with row1[1]: st.markdown(
-    f'<div class="metric-box metric-box-2"><div class="label">คะแนนพึงพอใจเฉลี่ย</div><div class="value">{display_avg_satisfaction}</div></div>',
-    unsafe_allow_html=True)
-with row1[2]: st.markdown(
-    f'<div class="metric-box metric-box-6"><div class="label">สุขภาพผู้ป่วยโดยรวม</div><div class="value" style="font-size: 1.8rem;">{most_common_health_status}</div></div>',
-    unsafe_allow_html=True)
-with row2[0]: st.markdown(
-    f'<div class="metric-box metric-box-3"><div class="label">% กลับมาใช้บริการ</div><div class="value">{return_service_pct}</div></div>',
-    unsafe_allow_html=True)
-with row2[1]: st.markdown(
-    f'<div class="metric-box metric-box-4"><div class="label">% การบอกต่อ</div><div class="value">{recommend_pct}</div></div>',
-    unsafe_allow_html=True)
-with row2[2]: st.markdown(
-    f'<div class="metric-box metric-box-5"><div class="label">% ไม่พึงพอใจ</div><div class="value">{dissatisfied_pct}</div></div>',
-    unsafe_allow_html=True)
+with row1[0]:
+    st.markdown(
+        f'<div class="metric-box metric-box-1"><div class="label">จำนวนผู้ตอบ</div><div class="value">{total_responses:,}</div></div>',
+        unsafe_allow_html=True)
+with row1[1]:
+    st.markdown(
+        f'<div class="metric-box metric-box-2"><div class="label">คะแนนพึงพอใจเฉลี่ย</div><div class="value">{display_avg_satisfaction}</div></div>',
+        unsafe_allow_html=True)
+with row1[2]:
+    st.markdown(
+        f'<div class="metric-box metric-box-6"><div class="label">สุขภาพผู้ป่วยโดยรวม</div><div class="value" style="font-size: 1.8rem;">{most_common_health_status}</div></div>',
+        unsafe_allow_html=True)
+with row2[0]:
+    st.markdown(
+        f'<div class="metric-box metric-box-3"><div class="label">% กลับมาใช้บริการ</div><div class="value">{return_service_pct}</div></div>',
+        unsafe_allow_html=True)
+with row2[1]:
+    st.markdown(
+        f'<div class="metric-box metric-box-4"><div class="label">% การบอกต่อ</div><div class="value">{recommend_pct}</div></div>',
+        unsafe_allow_html=True)
+with row2[2]:
+    st.markdown(
+        f'<div class="metric-box metric-box-5"><div class="label">% ไม่พึงพอใจ</div><div class="value">{dissatisfied_pct}</div></div>',
+        unsafe_allow_html=True)
 
 st.markdown("---")
 
 # --- ถ้าเลือกภาพรวมทั้งหมด แสดงจำนวนการประเมินตามหน่วยงาน ---
-if selected_department == 'ภาพรวมทั้งหมด':
+if selected_department == 'ภาพรวมทั้งหมด' and 'หน่วยงาน' in df_filtered.columns:
     st.subheader("สรุปจำนวนการประเมินตามหน่วยงาน")
     evaluation_counts = df_filtered['หน่วยงาน'].value_counts().reset_index()
     evaluation_counts.columns = ['หน่วยงาน', 'จำนวนการประเมิน']
@@ -411,7 +445,7 @@ if selected_department == 'ภาพรวมทั้งหมด':
     st.markdown("---")
 
 # ==============================================================================
-# ความพึงพอใจภาพรวม: หัวใจ + สัดส่วนคะแนน 1–5 (จัดคู่กัน)
+# ความพึงพอใจภาพรวม: หัวใจ + สัดส่วนคะแนน 1–5
 # ==============================================================================
 st.subheader("ความพึงพอใจภาพรวม")
 col_left, col_right = st.columns(2)
@@ -435,7 +469,7 @@ with col_right:
 st.markdown("---")
 
 # ==============================================================================
-# ส่วนที่ 2: ความพึงพอใจต่อบริการ (รายหัวข้อ) -> เกจ (compact 3 คอลัมน์)
+# ส่วนที่ 2: ความพึงพอใจต่อบริการ (รายหัวข้อ) -> เกจ
 # ==============================================================================
 st.header("ส่วนที่ 2: ความพึงพอใจต่อบริการ (รายหัวข้อ)")
 
@@ -452,7 +486,7 @@ satisfaction_cols = {
     'Q10_คำแนะนำกลับบ้าน': '10. ความชัดเจนของคำแนะนำเมื่อกลับบ้าน'
 }
 
-# แปลงทุกหัวข้อเป็นคะแนน (แก้กรณีคอลัมน์ 1 และ 7 ไม่ถูกแปลง)
+# แปลงทุกหัวข้อเป็นคะแนน 1–5
 for col in satisfaction_cols.keys():
     if col in df_filtered.columns:
         df_filtered[f'{col}__score'] = df_filtered[col].apply(normalize_to_1_5).astype('Float64')
@@ -471,16 +505,16 @@ for i in range(0, len(items), cols_per_row):
                         df_filtered[score_col],
                         title,
                         height=200,
-                        key=f"gauge_{col_name}"    # <<–– สำคัญ
+                        key=f"gauge_{col_name}"
                     )
-
 
 st.markdown("---")
 
-# ============================== ส่วนที่ 3: เกจ ==============================
+# ==============================================================================
+# ส่วนที่ 3: ความตั้งใจในอนาคตและข้อเสนอแนะ
+# ==============================================================================
 st.header("ส่วนที่ 3: ความตั้งใจในอนาคตและข้อเสนอแนะ")
 
-# helper: นับ % ตามค่าบวก (e.g. 'ใช่' หรือ 'มี')
 def percent_positive(series, positives=("ใช่",)):
     s = series.dropna().astype(str).str.strip()
     n = s.size
@@ -489,24 +523,23 @@ def percent_positive(series, positives=("ใช่",)):
     pct = (s.isin(positives).sum() / n) * 100.0
     return pct, n
 
-# helper: เกจเปอร์เซ็นต์ (0–100)
 def render_percent_gauge(title, pct, n, height=190, key=None, number_font_size=34, mode='high_good'):
     st.markdown(f"<div class='gauge-head'>{title}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
 
     if mode == 'high_good':
         steps_4 = [
-            {'range': [0, 50],   'color': '#DC2626'},  # แดง
-            {'range': [50, 65], 'color': '#EA580C'},  # ส้ม
-            {'range': [65, 80], 'color': '#F59E0B'},  # เหลือง
-            {'range': [80, 100],'color': '#16A34A'},  # เขียว
+            {'range': [0, 50],  'color': '#DC2626'},
+            {'range': [50, 65], 'color': '#EA580C'},
+            {'range': [65, 80], 'color': '#F59E0B'},
+            {'range': [80, 100],'color': '#16A34A'},
         ]
     else:  # 'low_good' เช่น % ไม่พึงพอใจ (ต่ำดี)
         steps_4 = [
-            {'range': [0, 5],    'color': '#16A34A'},  # เขียว
-            {'range': [5, 10],   'color': '#F59E0B'},  # เหลือง
-            {'range': [10, 20], 'color': '#EA580C'},  # ส้ม
-            {'range': [20, 100],'color': '#DC2626'},  # แดง
+            {'range': [0, 5],   'color': '#16A34A'},
+            {'range': [5, 10],  'color': '#F59E0B'},
+            {'range': [10, 20], 'color': '#EA580C'},
+            {'range': [20, 100],'color': '#DC2626'},
         ]
 
     fig = go.Figure(go.Indicator(
@@ -525,14 +558,13 @@ def render_percent_gauge(title, pct, n, height=190, key=None, number_font_size=3
     st.plotly_chart(fig, use_container_width=True, key=key or f"gauge_pct_{hash(title)}")
 
 
-# คำนวณ % แต่ละตัวชี้วัด
-pct_return, n_return = percent_positive(df_filtered['กลับมารับบริการหรือไม่'], positives=("ใช่",))
-pct_reco,   n_reco   = percent_positive(df_filtered['แนะนำผู้อื่นหรือไม่'], positives=("ใช่",))
-pct_dissat, n_dissat = percent_positive(df_filtered['มีความไม่พึงพอใจหรือไม่'], positives=("มี",))
+# คำนวณ % ตัวชี้วัด
+pct_return, n_return = percent_positive(df_filtered.get('กลับมารับบริการหรือไม่', pd.Series(dtype=str)), positives=("ใช่",))
+pct_reco,   n_reco   = percent_positive(df_filtered.get('แนะนำผู้อื่นหรือไม่', pd.Series(dtype=str)), positives=("ใช่",))
+pct_dissat, n_dissat = percent_positive(df_filtered.get('มีความไม่พึงพอใจหรือไม่', pd.Series(dtype=str)), positives=("มี",))
 
-# จัดวาง 3 เกจใน 3 คอลัมน์
+# จัดวาง 3 เกจ
 c1, c2, c3 = st.columns(3)
-
 with c1:
     render_percent_gauge("1. หากเจ็บป่วยจะกลับมารับบริการหรือไม่ (ตอบ 'ใช่')",
                          pct_return, n_return, height=200, key="g_future_return", mode='high_good')
@@ -543,25 +575,25 @@ with c3:
     render_percent_gauge("3. ไม่พึงพอใจ (ตอบ 'มี')",
                          pct_dissat, n_dissat, height=200, key="g_future_dissat", mode='low_good')
 
-
 st.markdown("---")
 
-# ตารางรายละเอียด/ความคาดหวัง (คงเดิม)
+# ตารางรายละเอียด/ความคาดหวัง
 st.subheader("รายละเอียดความไม่พึงพอใจ (หากมี)")
 if 'รายละเอียดความไม่พึงพอใจ' in df_filtered.columns:
-    temp_df = df_filtered[['หน่วยงาน', 'รายละเอียดความไม่พึงพอใจ']].copy()
+    temp_df = df_filtered[['หน่วยงาน', 'รายละเอียดความไม่พึงพอใจ']].copy() if 'หน่วยงาน' in df_filtered.columns else df_filtered[['รายละเอียดความไม่พึงพอใจ']].copy()
     temp_df.dropna(subset=['รายละเอียดความไม่พึงพอใจ'], inplace=True)
     temp_df['details_stripped'] = temp_df['รายละเอียดความไม่พึงพอใจ'].astype(str).str.strip()
     dissatisfaction_df = temp_df[(temp_df['details_stripped'] != '') & (temp_df['details_stripped'] != 'ไม่มี')]
+    show_cols = ['หน่วยงาน', 'รายละเอียดความไม่พึงพอใจ'] if 'หน่วยงาน' in temp_df.columns else ['รายละเอียดความไม่พึงพอใจ']
     if not dissatisfaction_df.empty:
-        st.dataframe(dissatisfaction_df[['หน่วยงาน', 'รายละเอียดความไม่พึงพอใจ']],
-                         use_container_width=True, hide_index=True)
+        st.dataframe(dissatisfaction_df[show_cols], use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบรายละเอียดความไม่พึงพอใจในช่วงข้อมูลที่เลือก")
 
 st.subheader("ความคาดหวังต่อบริการของโรงพยาบาลในภาพรวม")
 if 'ความคาดหวังต่อบริการ' in df_filtered.columns:
-    suggestions_df = df_filtered[df_filtered['ความคาดหวังต่อบริการ'].notna()][['หน่วยงาน', 'ความคาดหวังต่อบริการ']]
+    show_cols = ['หน่วยงาน', 'ความคาดหวังต่อบริการ'] if 'หน่วยงาน' in df_filtered.columns else ['ความคาดหวังต่อบริการ']
+    suggestions_df = df_filtered[df_filtered['ความคาดหวังต่อบริการ'].notna()][show_cols]
     if not suggestions_df.empty:
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
