@@ -26,8 +26,8 @@ st.markdown("""
   .gauge-head {
     font-size: 18px; font-weight: 700; color: #111;
     line-height: 1.25; margin: 2px 4px 6px;
-    white-space: normal;           /* ให้ขึ้นบรรทัดใหม่ตามธรรมชาติ */
-    word-break: break-word;        /* ไทยไม่มีช่องว่าง ให้ตัดเมื่อชนขอบคอลัมน์ */
+    white-space: normal;      /* ให้ขึ้นบรรทัดใหม่ตามธรรมชาติ */
+    word-break: break-word;      /* ไทยไม่มีช่องว่าง ให้ตัดเมื่อชนขอบคอลัมน์ */
   }
   .gauge-sub  {
     font-size: 16px; font-weight: 600;  /* ← ขยายขนาด n =  */
@@ -41,7 +41,7 @@ st.markdown("""
   /* === Metric cards: 2/3 label size, pastel colors, row spacing = label size === */
 
   :root{
-    --metric-value-size: 2.6rem;                /* ขนาดตัวเลข (ปรับได้) */
+    --metric-value-size: 2.6rem;            /* ขนาดตัวเลข (ปรับได้) */
     --metric-label-size: calc(2.6rem * 2/3);    /* 2/3 ของตัวเลข */
   }
 
@@ -55,7 +55,7 @@ st.markdown("""
     box-shadow: 0 2px 6px rgba(0,0,0,.05);
     display: flex; flex-direction: column; justify-content: center;
     min-height: 120px;
-    background: transparent;                    /* กันพื้นขาวทับสีพาสเทล */
+    background: transparent;            /* กันพื้นขาวทับสีพาสเทล */
     margin-bottom: var(--metric-label-size);    /* ช่องไฟ = ความสูงตัวหนังสือ */
   }
 
@@ -93,26 +93,15 @@ st.markdown("""
 
 
 # ==============================================================================
-# DATA LOADING AND PREPARATION
+# DATA LOADING AND PREPARATION (ปรับปรุงใหม่)
 # ==============================================================================
-DATA_FILE = "patient_satisfaction_data.csv"  # ตั้งชื่อไฟล์ข้อมูลที่อ่าน
-
-def get_file_mtime(path):
-    try:
-        return os.path.getmtime(path)
-    except OSError:
-        return None
 
 @st.cache_data
-def load_and_prepare_data(filepath, file_mtime):
-    if not os.path.exists(filepath):
-        return pd.DataFrame()
-    try:
-        df = pd.read_csv(filepath)
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ข้อมูล: {e}")
-        return pd.DataFrame()
-
+def prepare_data(df):
+    """
+    รับ DataFrame ที่อ่านจากไฟล์แล้ว มาประมวลผล (Mapping, สร้างคอลัมน์เวลา)
+    """
+    
     # ----------------- Mapping ชื่อคอลัมน์ (OPD) -----------------
     column_mapping = {
         'หน่วยงานที่ท่านเข้ารับบริการ/ ต้องการประเมิน (เพื่อสะท้อนกลับหน่วยงานโดยตรง)': 'หน่วยงาน',
@@ -145,6 +134,11 @@ def load_and_prepare_data(filepath, file_mtime):
     df = df.rename(columns=lambda c: column_mapping.get(c.strip(), c.strip()))
 
     # ----------------- Time fields -----------------
+    # *** เพิ่มการตรวจสอบคอลัมน์สำคัญ ***
+    if 'ประทับเวลา' not in df.columns:
+        st.error("ไม่พบคอลัมน์ 'ประทับเวลา' (Timestamp) ในไฟล์ที่อัปโหลด")
+        return pd.DataFrame() # คืนค่า DataFrame ว่าง
+
     df['date_col'] = pd.to_datetime(df['ประทับเวลา'], errors='coerce')
     df = df.dropna(subset=['date_col'])
     df['เดือน'] = df['date_col'].dt.month
@@ -153,7 +147,7 @@ def load_and_prepare_data(filepath, file_mtime):
     return df
 
 # ==============================================================================
-# PLOTTING HELPERS
+# PLOTTING HELPERS (คงเดิมทั้งหมด)
 # ==============================================================================
 
 # --- 1) Heart Average Component ---
@@ -279,17 +273,42 @@ def plot_gauge_for_column_numseries(
 
 
 # ==============================================================================
-# MAIN APP
+# MAIN APP (ปรับปรุงใหม่)
 # ==============================================================================
-file_modification_time = get_file_mtime(DATA_FILE)
-df_original = load_and_prepare_data(DATA_FILE, file_modification_time)
 
-if df_original.empty:
-    st.warning("ยังไม่มีข้อมูล, กรุณาไปที่หน้า 'Admin Upload' เพื่ออัปโหลดไฟล์ข้อมูล OPD ก่อน")
+# --- 1. เพิ่ม File Uploader ใน Sidebar ---
+st.sidebar.markdown("---")
+st.sidebar.header("อัปโหลดไฟล์ข้อมูล (Upload)")
+uploaded_file = st.sidebar.file_uploader(
+    "เลือกไฟล์ Excel (.xlsx) หรือ CSV (.csv)",
+    type=["xlsx", "csv"]
+)
+
+if uploaded_file is None:
+    st.warning("💡 กรุณาอัปโหลดไฟล์ข้อมูล Excel หรือ CSV ในแถบด้านข้าง (Sidebar) เพื่อเริ่มใช้งาน")
     st.stop()
 
-# --- Sidebar ---
-st.sidebar.markdown("---")
+# --- 2. ถ้ามีไฟล์อัปโหลด ให้ดำเนินการต่อ ---
+try:
+    if uploaded_file.name.endswith('.csv'):
+        df_raw = pd.read_csv(uploaded_file)
+    else:
+        df_raw = pd.read_excel(uploaded_file)
+    
+    # ส่ง DataFrame ดิบไปให้ฟังก์ชันใหม่ประมวลผล
+    df_original = prepare_data(df_raw.copy()) 
+
+except Exception as e:
+    st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ที่อัปโหลด: {e}")
+    st.stop()
+
+
+# --- 3. ตรวจสอบ df_original หลังประมวลผล ---
+if df_original.empty:
+    st.error("ข้อมูลในไฟล์ที่อัปโหลดว่างเปล่า หรือไม่พบคอลัมน์ 'ประทับเวลา' ที่จำเป็น")
+    st.stop()
+
+# --- Sidebar (ส่วนที่เหลือ - ทำงานหลังโหลดข้อมูลแล้ว) ---
 min_date = df_original['date_col'].min().strftime('%d %b %Y')
 max_date = df_original['date_col'].max().strftime('%d %b %Y')
 st.sidebar.markdown(f"""
@@ -319,13 +338,17 @@ if time_filter_option != "ทั้งหมด":
                          9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'}
             month_list = sorted(df_filtered['เดือน'].unique())
             selected_month_num = st.sidebar.selectbox("เลือกเดือน:", month_list,
-                                                      format_func=lambda x: month_map.get(x, x))
+                                                        format_func=lambda x: month_map.get(x, x))
             df_filtered = df_filtered[df_filtered['เดือน'] == selected_month_num]
 if selected_department != 'ภาพรวมทั้งหมด':
     df_filtered = df_filtered[df_filtered['หน่วยงาน'] == selected_department]
 if df_filtered.empty:
     st.warning("ไม่พบข้อมูลตามตัวกรองที่ท่านเลือก")
     st.stop()
+
+# ==============================================================================
+# --- (ส่วนที่เหลือของแอป คงเดิมทั้งหมด) ---
+# ==============================================================================
 
 # --- Page Title ---
 st.title(f"DASHBOARD (OPD): {selected_department}")
@@ -448,7 +471,7 @@ for i in range(0, len(items), cols_per_row):
                         df_filtered[score_col],
                         title,
                         height=200,
-                        key=f"gauge_{col_name}"   # <<–– สำคัญ
+                        key=f"gauge_{col_name}"    # <<–– สำคัญ
                     )
 
 
@@ -473,15 +496,15 @@ def render_percent_gauge(title, pct, n, height=190, key=None, number_font_size=3
 
     if mode == 'high_good':
         steps_4 = [
-            {'range': [0, 50],  'color': '#DC2626'},  # แดง
+            {'range': [0, 50],   'color': '#DC2626'},  # แดง
             {'range': [50, 65], 'color': '#EA580C'},  # ส้ม
             {'range': [65, 80], 'color': '#F59E0B'},  # เหลือง
             {'range': [80, 100],'color': '#16A34A'},  # เขียว
         ]
     else:  # 'low_good' เช่น % ไม่พึงพอใจ (ต่ำดี)
         steps_4 = [
-            {'range': [0, 5],   'color': '#16A34A'},  # เขียว
-            {'range': [5, 10],  'color': '#F59E0B'},  # เหลือง
+            {'range': [0, 5],    'color': '#16A34A'},  # เขียว
+            {'range': [5, 10],   'color': '#F59E0B'},  # เหลือง
             {'range': [10, 20], 'color': '#EA580C'},  # ส้ม
             {'range': [20, 100],'color': '#DC2626'},  # แดง
         ]
@@ -532,7 +555,7 @@ if 'รายละเอียดความไม่พึงพอใจ' in
     dissatisfaction_df = temp_df[(temp_df['details_stripped'] != '') & (temp_df['details_stripped'] != 'ไม่มี')]
     if not dissatisfaction_df.empty:
         st.dataframe(dissatisfaction_df[['หน่วยงาน', 'รายละเอียดความไม่พึงพอใจ']],
-                     use_container_width=True, hide_index=True)
+                         use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบรายละเอียดความไม่พึงพอใจในช่วงข้อมูลที่เลือก")
 
@@ -543,4 +566,3 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
-
