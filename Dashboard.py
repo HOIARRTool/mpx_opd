@@ -338,11 +338,15 @@ if df_filtered.empty:
     st.stop()
 
 # --- Metrics ---
-satisfaction_score_map = {'มากที่สุด': 5, 'มาก': 4, 'ปานกลาง': 3, 'น้อย': 2, 'น้อยมาก': 1}
+# <<< CHANGED: ใช้ normalize_to_1_5 + แปลงเป็นตัวเลขแทน .map() ตรงๆ
 if 'ความพึงพอใจโดยรวม' in df_filtered.columns:
-    df_filtered['คะแนนความพึงพอใจ'] = df_filtered['ความพึงพอใจโดยรวม'].map(satisfaction_score_map)
+    df_filtered['คะแนนความพึงพอใจ'] = (
+        df_filtered['ความพึงพอใจโดยรวม']
+        .apply(normalize_to_1_5)
+        .astype('Float64')
+    )
 else:
-    df_filtered['คะแนนความพึงพอใจ'] = pd.NA
+    df_filtered['คะแนนความพึงพอใจ'] = pd.Series(dtype='Float64')
 
 average_satisfaction_score = df_filtered['คะแนนความพึงพอใจ'].mean()
 display_avg_satisfaction = f"{average_satisfaction_score:.2f}" if pd.notna(average_satisfaction_score) else "N/A"
@@ -401,11 +405,14 @@ with col_left:
     render_average_heart_rating(average_satisfaction_score, max_score=5, responses=total_responses)
 
 with col_right:
+    # <<< CHANGED: ทำให้ค่ากลายเป็น int 1–5 ชัดเจนก่อนนับ
     rating_counts = (
         df_filtered['คะแนนความพึงพอใจ']
+        .dropna()
+        .round()
+        .astype(int)
         .value_counts()
-        .reindex([1, 2, 3, 4, 5])
-        .fillna(0).astype(int)
+        .reindex([1, 2, 3, 4, 5], fill_value=0)
         .reset_index()
     )
     rating_counts.columns = ['คะแนน', 'จำนวน']
@@ -545,5 +552,3 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
-
-
