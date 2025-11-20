@@ -168,7 +168,7 @@ DATA_FILE = "mpxo.xlsx"  # <--- 1. เพิ่มตรงนี้ครับ
 # Google Sheet Config (OPD)
 SHEET_ID = '1TYo_SQTHgs97kfmBl9An0wEXdbFT0ofIC4v8TGzWyk8'
 SHEET_GID = '1745557312'
-GSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={SHEET_GID}"
+GSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=การตอบแบบฟอร์ม 1"
 
 df_original = pd.DataFrame()
 data_source_info = ""
@@ -602,4 +602,5 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
