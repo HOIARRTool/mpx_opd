@@ -327,50 +327,65 @@ def plot_gauge_for_column_numseries(
 
 
 # ==============================================================================
-# DASHBOARD (Landing Page)
+# DASHBOARD (Landing Page) & FILTERS
 # ==============================================================================
-st.title(f"DASHBOARD: {selected_department}")
 
-# --- Sidebar: ช่วงวันที่และตัวกรอง ---
+# 1. สร้าง Sidebar และตัวแปร selected_department ก่อน (สำคัญมาก ต้องทำก่อน st.title)
 st.sidebar.markdown("---")
-min_date = df_original['date_col'].min().strftime('%d %b %Y')
-max_date = df_original['date_col'].max().strftime('%d %b %Y')
-st.sidebar.markdown(f"""
-<div class="sidebar-info">
-    <div class="label">ช่วงวันที่ของข้อมูล</div>
-    <div class="value">{min_date} - {max_date}</div>
-</div>
-""", unsafe_allow_html=True)
+if 'date_col' in df_original.columns and not df_original['date_col'].isna().all():
+    min_date = df_original['date_col'].min().strftime('%d %b %Y')
+    max_date = df_original['date_col'].max().strftime('%d %b %Y')
+    st.sidebar.markdown(f"""
+    <div class="sidebar-info">
+        <div class="label">ช่วงวันที่ของข้อมูล</div>
+        <div class="value">{min_date} - {max_date}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.sidebar.header("ตัวกรองข้อมูล (Filter)")
-available_departments = ['ภาพรวมทั้งหมด'] + sorted(df_original['หน่วยงาน'].dropna().unique().tolist()) if 'หน่วยงาน' in df_original.columns else ['ภาพรวมทั้งหมด']
+available_departments = ['ภาพรวมทั้งหมด']
+if 'หน่วยงาน' in df_original.columns:
+    available_departments += sorted(df_original['หน่วยงาน'].dropna().unique().tolist())
+
 selected_department = st.sidebar.selectbox("เลือกหน่วยงาน:", available_departments)
+
 time_filter_option = st.sidebar.selectbox("เลือกช่วงเวลา:", ["ทั้งหมด", "เลือกตามปี", "เลือกตามไตรมาส", "เลือกตามเดือน"])
 
+# 2. กรองข้อมูล (Filter Logic)
 df_filtered = df_original.copy()
-if time_filter_option != "ทั้งหมด":
-    year_list = sorted(df_original['ปี'].unique(), reverse=True)
-    selected_year = st.sidebar.selectbox("เลือกปี:", year_list)
-    df_filtered = df_original[df_original['ปี'] == selected_year]
-    if time_filter_option in ["เลือกตามไตรมาส", "เลือกตามเดือน"]:
-        if time_filter_option == "เลือกตามไตรมาส":
-            quarter_list = sorted(df_filtered['ไตรมาส'].unique())
-            selected_quarter = st.sidebar.selectbox("เลือกไตรมาส:", quarter_list)
-            df_filtered = df_filtered[df_filtered['ไตรมาส'] == selected_quarter]
-        else:
-            month_map = {1: 'ม.ค.', 2: 'ก.พ.', 3: 'มี.ค.', 4: 'เม.ย.', 5: 'พ.ค.', 6: 'มิ.ย.', 7: 'ก.ค.', 8: 'ส.ค.',
-                         9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'}
-            month_list = sorted(df_filtered['เดือน'].unique())
-            selected_month_num = st.sidebar.selectbox("เลือกเดือน:", month_list,
-                                                      format_func=lambda x: month_map.get(x, x))
-            df_filtered = df_filtered[df_filtered['เดือน'] == selected_month_num]
 
+# กรองตามเวลา
+if time_filter_option != "ทั้งหมด" and 'ปี' in df_original.columns:
+    year_list = sorted(df_original['ปี'].dropna().unique(), reverse=True)
+    if year_list:
+        selected_year = st.sidebar.selectbox("เลือกปี:", year_list)
+        df_filtered = df_filtered[df_filtered['ปี'] == selected_year]
+
+        if time_filter_option in ["เลือกตามไตรมาส", "เลือกตามเดือน"]:
+            if time_filter_option == "เลือกตามไตรมาส":
+                quarter_list = sorted(df_filtered['ไตรมาส'].dropna().unique())
+                selected_quarter = st.sidebar.selectbox("เลือกไตรมาส:", quarter_list)
+                df_filtered = df_filtered[df_filtered['ไตรมาส'] == selected_quarter]
+            elif time_filter_option == "เลือกตามเดือน":
+                month_map = {1: 'ม.ค.', 2: 'ก.พ.', 3: 'มี.ค.', 4: 'เม.ย.', 5: 'พ.ค.', 6: 'มิ.ย.', 7: 'ก.ค.', 8: 'ส.ค.',
+                             9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'}
+                month_list = sorted(df_filtered['เดือน'].dropna().unique())
+                selected_month_num = st.sidebar.selectbox("เลือกเดือน:", month_list,
+                                                        format_func=lambda x: month_map.get(x, x))
+                df_filtered = df_filtered[df_filtered['เดือน'] == selected_month_num]
+
+# กรองตามหน่วยงาน
 if selected_department != 'ภาพรวมทั้งหมด' and 'หน่วยงาน' in df_filtered.columns:
     df_filtered = df_filtered[df_filtered['หน่วยงาน'] == selected_department]
 
 if df_filtered.empty:
     st.warning("ไม่พบข้อมูลตามตัวกรองที่ท่านเลือก")
     st.stop()
+
+# 3. แสดงหัวข้อ Dashboard (ตอนนี้ตัวแปร selected_department มีค่าแล้ว จะไม่ Error ครับ)
+st.title(f"DASHBOARD: {selected_department}")
+
+
 
 # --- Metrics ---
 # <<< CHANGED: ใช้ normalize_to_1_5 + แปลงเป็นตัวเลขแทน .map() ตรงๆ
@@ -587,3 +602,4 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
