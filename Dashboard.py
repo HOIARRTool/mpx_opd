@@ -72,6 +72,32 @@ st.markdown("""
   .metric-box.metric-box-6{ background:#e3f2fd !important; }
   .metric-box .label{ font-size: var(--metric-label-size) !important; font-weight: 700; line-height: 1.15; margin-bottom: 6px; color: #374151; }
   .metric-box .value{ font-size: var(--metric-value-size) !important; font-weight: 800; line-height: 1.1; }
+/* เพิ่ม Animation ปุ่มเรืองแสง */
+    @keyframes pulse-green {
+        0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+    }
+    .realtime-badge {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        border: 1px solid #c8e6c9;
+    }
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        background-color: #2ecc71;
+        border-radius: 50%;
+        animation: pulse-green 2s infinite; /* สั่งให้กระพริบเรืองแสง */
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -332,15 +358,35 @@ def plot_gauge_for_column_numseries(
 
 # 1. สร้าง Sidebar และตัวแปร selected_department ก่อน (สำคัญมาก ต้องทำก่อน st.title)
 st.sidebar.markdown("---")
+
+# เตรียมค่าวันที่ (เผื่อกรณีไม่มีข้อมูล)
+min_date_txt = "N/A"
+max_date_txt = "N/A"
 if 'date_col' in df_original.columns and not df_original['date_col'].isna().all():
-    min_date = df_original['date_col'].min().strftime('%d %b %Y')
-    max_date = df_original['date_col'].max().strftime('%d %b %Y')
-    st.sidebar.markdown(f"""
-    <div class="sidebar-info">
-        <div class="label">ช่วงวันที่ของข้อมูล</div>
-        <div class="value">{min_date} - {max_date}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    min_date_txt = df_original['date_col'].min().strftime('%d %b %Y')
+    max_date_txt = df_original['date_col'].max().strftime('%d %b %Y')
+
+# ตรวจสอบว่าเป็น Real-time หรือไม่ เพื่อเลือกแสดงผลปุ่ม
+if "Real-time" in data_source_info:
+    # แบบมีไฟกระพริบ (เรียกใช้ CSS .realtime-badge ที่เราเพิ่งใส่ไป)
+    source_html = f'''
+        <div class="realtime-badge">
+            <div class="status-dot"></div>
+            {data_source_info}
+        </div>
+    '''
+else:
+    # แบบธรรมดา (กรณีไฟล์อัปโหลด)
+    source_html = f'<div style="margin-top:8px;font-size:0.8rem;color:#666;">📂 {data_source_info}</div>'
+
+# แสดงผลใน Sidebar (รวมวันที่และปุ่มเข้าด้วยกัน)
+st.sidebar.markdown(f"""
+<div class="sidebar-info">
+    <div class="label">ช่วงวันที่ของข้อมูล</div>
+    <div class="value">{min_date_txt} - {max_date_txt}</div>
+    {source_html}
+</div>
+""", unsafe_allow_html=True)
 
 st.sidebar.header("ตัวกรองข้อมูล (Filter)")
 available_departments = ['ภาพรวมทั้งหมด']
@@ -602,6 +648,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
