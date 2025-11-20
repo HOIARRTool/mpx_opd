@@ -383,15 +383,6 @@ else:
     # แบบธรรมดา (กรณีไฟล์อัปโหลด)
     source_html = f'<div style="margin-top:8px;font-size:0.8rem;color:#666;">📂 {data_source_info}</div>'
 
-# แสดงผลใน Sidebar (รวมวันที่และปุ่มเข้าด้วยกัน)
-st.sidebar.markdown(f"""
-<div class="sidebar-info">
-    <div class="label">ช่วงวันที่ของข้อมูล</div>
-    <div class="value">{min_date_txt} - {max_date_txt}</div>
-    {source_html}
-</div>
-""", unsafe_allow_html=True)
-
 st.sidebar.header("ตัวกรองข้อมูล (Filter)")
 available_departments = ['ภาพรวมทั้งหมด']
 if 'หน่วยงาน' in df_original.columns:
@@ -652,6 +643,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
