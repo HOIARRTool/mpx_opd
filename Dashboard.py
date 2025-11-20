@@ -22,7 +22,8 @@ logo_urls = [
     "https://github.com/HOIARRTool/appqtbi/blob/main/messageImage_1763018963411.jpg?raw=true",    
     "https://mfu.ac.th/fileadmin/_processed_/6/7/csm_logo_mfu_3d_colour_15e5a7a50f.png?raw=true"
 ]
-LOGO_URL = logo_urls[0] # กำหนดตัวแปรสำหรับ Sidebar
+
+LOGO_URL = "https://raw.githubusercontent.com/HOIARRTool/hoiarr/main/logo1.png"
 
 # 2. ส่วน Sidebar (ตอนนี้เรียกใช้ LOGO_URL ได้แล้ว)
 st.sidebar.markdown(
@@ -588,6 +589,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
