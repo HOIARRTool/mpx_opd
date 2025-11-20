@@ -19,8 +19,16 @@ st.set_page_config(layout="wide", page_title="Patient Experience Program | OPD")
 LOGO_URL = "https://raw.githubusercontent.com/HOIARRTool/hoiarr/refs/heads/main/logo1.png"
 
 st.sidebar.markdown(
-    f'<div style="display: flex; align-items: center; margin-bottom: 1rem;"><img src="{LOGO_URL}" style="height: 40px; margin-right: 10px;"><h2 style="margin: 0; font-size: 1.5rem;"><span class="gradient-text">Patient Experience (OPD)</span></h2></div>',
-    unsafe_allow_html=True)
+    f'''
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;">
+        <img src="{LOGO_URL}" style="height:40px;display:block;">
+        <h2 style="margin:0;font-size:1.5rem;">
+            <span class="gradient-text">Patient Experience Program [OPD]</span>
+        </h2>
+    </div>
+    ''',
+    unsafe_allow_html=True
+)
 
 st.markdown("""
 <style>
@@ -552,4 +560,5 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
