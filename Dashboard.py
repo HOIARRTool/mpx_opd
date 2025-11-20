@@ -58,27 +58,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# DATA LOADING AND PREPARATION (รองรับอัปโหลด CSV/XLSX)
+# DATA LOADING AND PREPARATION
 # ==============================================================================
-def _hash_bytes(b: bytes) -> str:
-    return hashlib.md5(b).hexdigest() if b else "no-bytes"
 
-@st.cache_data
-def load_and_prepare_data_from_bytes(file_bytes: bytes, filename: str) -> pd.DataFrame:
+@st.cache_data(ttl=300) # Cache 5 นาที
+def load_and_prepare_data(source: Any) -> pd.DataFrame:
     """
-    อ่านไฟล์จาก bytes (xlsx/xls/csv) แล้วเตรียมคอลัมน์ที่ใช้ในแดชบอร์ด
-    ผูก cache ตามอาร์กิวเมนต์ file_bytes + filename อัตโนมัติ
+    โหลดข้อมูลจาก URL (Google Sheet), File Path, หรือ UploadedFile
     """
-    if not file_bytes:
+    if source is None:
         return pd.DataFrame()
 
     try:
-        if filename.lower().endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(file_bytes))
-        else:
-            df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, engine="openpyxl")
+        # ตรวจสอบชนิดของ source แล้วอ่านไฟล์
+        if isinstance(source, str): # เป็น URL หรือ ชื่อไฟล์ในเครื่อง (เช่น mpxo.xlsx)
+            if source.lower().endswith('.xlsx'):
+                df = pd.read_excel(source)
+            else:
+                df = pd.read_csv(source)
+        else: # เป็นไฟล์ที่อัปโหลดมา (UploadedFile object)
+            if source.name.lower().endswith('.xlsx'):
+                df = pd.read_excel(source)
+            else:
+                df = pd.read_csv(source)
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ข้อมูล: {e}")
+        # st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์ข้อมูล: {e}") # ปิดไว้ก่อนกันรกลูกตา
         return pd.DataFrame()
 
     # ----------------- Mapping ชื่อคอลัมน์ (OPD) -----------------
@@ -118,15 +122,19 @@ def load_and_prepare_data_from_bytes(file_bytes: bytes, filename: str) -> pd.Dat
         if cand in df.columns:
             time_col = cand
             break
-    if not time_col:
-        st.error("ไม่พบคอลัมน์เวลาสำหรับอ้างอิง (เช่น 'ประทับเวลา' หรือ 'Timestamp')")
-        return pd.DataFrame()
-
-    df['date_col'] = pd.to_datetime(df[time_col], errors='coerce')
-    df = df.dropna(subset=['date_col'])
-    df['เดือน'] = df['date_col'].dt.month
-    df['ไตรมาส'] = df['date_col'].dt.quarter
-    df['ปี'] = df['date_col'].dt.year
+    
+    if time_col:
+        # dayfirst=True สำคัญมากสำหรับ Google Sheets ไทย (ป้องกันวันที่หาย)
+        df['date_col'] = pd.to_datetime(df[time_col], dayfirst=True, errors='coerce')
+        df = df.dropna(subset=['date_col'])
+        df['เดือน'] = df['date_col'].dt.month
+        df['ไตรมาส'] = df['date_col'].dt.quarter
+        df['ปี'] = df['date_col'].dt.year
+    else:
+        # st.warning("ไม่พบคอลัมน์เวลา (Timestamp) การกรองเวลาจะไม่ทำงาน")
+        df['date_col'] = pd.NaT
+        df['ปี'] = None
+    
     return df
 
 # ==============================================================================
@@ -563,6 +571,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
