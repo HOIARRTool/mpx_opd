@@ -27,9 +27,9 @@ logo_urls = [
 col1, col2, col3 = st.columns([1, 1, 8])
 
 with col1:
-    st.image(logo_urls[0], use_container_width=True)
+    st.image(logo_urls[0], use_column_width=True)
 with col2:
-    st.image(logo_urls[1], use_container_width=True)
+    st.image(logo_urls[1], use_column_width=True)
 
 st.markdown("""
 <style>
@@ -563,6 +563,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
