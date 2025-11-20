@@ -11,28 +11,33 @@ import io
 import hashlib
 import re
 from typing import Any
+
 # ==============================================================================
 # PAGE CONFIGURATION & HEADER
 # ==============================================================================
 st.set_page_config(layout="wide", page_title="Patient Experience Program | OPD")
+
+# 1. ต้องประกาศตัวแปร Logo ให้เสร็จก่อนเรียกใช้ครับ
+logo_urls = [
+    "https://github.com/HOIARRTool/appqtbi/blob/main/messageImage_1763018963411.jpg?raw=true",    
+    "https://mfu.ac.th/fileadmin/_processed_/6/7/csm_logo_mfu_3d_colour_15e5a7a50f.png?raw=true"
+]
+LOGO_URL = logo_urls[0] # กำหนดตัวแปรสำหรับ Sidebar
+
+# 2. ส่วน Sidebar (ตอนนี้เรียกใช้ LOGO_URL ได้แล้ว)
 st.sidebar.markdown(
     f'''
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;">
         <img src="{LOGO_URL}" style="height:40px;display:block;">
         <h2 style="margin:0;font-size:1.5rem;">
-            <span class="gradient-text">Patient Experience Program [IPD]</span>
+            <span class="gradient-text">Patient Experience (OPD)</span>
         </h2>
     </div>
     ''',
     unsafe_allow_html=True
 )
-# --- ส่วนแสดงผล Logo 2 อันด้านบน (เหมือน IPD) ---
-logo_urls = [
-    "https://github.com/HOIARRTool/appqtbi/blob/main/messageImage_1763018963411.jpg?raw=true",    
-    "https://mfu.ac.th/fileadmin/_processed_/6/7/csm_logo_mfu_3d_colour_15e5a7a50f.png?raw=true"
-]
 
-# ใช้ HTML จัดวาง (ส่วนนี้ถูกต้องแล้วครับ)
+# 3. ส่วนแสดงผล Logo 2 อันด้านบน (ชิดขวาตามที่คุณต้องการ)
 st.markdown(
     f'''
     <div style="display: flex; justify-content: flex-end; align-items: flex-start; gap: 20px; margin-bottom: 10px;">
@@ -583,6 +588,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
