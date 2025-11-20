@@ -198,39 +198,43 @@ SHEET_GID = '1745557312'
 GSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={SHEET_GID}"
 df_original = pd.DataFrame()
 data_source_info = ""
-
-# Priority: Uploaded File > Google Sheet > Local File (Fallback)
-if uploaded_file is not None:
-    # กรณีที่ 1: ผู้ใช้เลือกอัปโหลดไฟล์เอง
-    data_source_info = f"ไฟล์ที่อัปโหลด: `{uploaded_file.name}`"
+if uploaded_file:
+    data_source_info = f"ไฟล์อัปโหลด: {uploaded_file.name}"
     df_original = load_and_prepare_data(uploaded_file)
-
 else:
-    # กรณีที่ 2: พยายามดึงจาก Google Sheet ก่อน (Real-time)
+    # ลองดึง Google Sheet
     try:
         df_original = load_and_prepare_data(GSHEET_URL)
-        
-        # เช็คว่าดึงมาแล้วว่างเปล่าหรือไม่ (บางที URL ถูกแต่ไม่มีข้อมูล)
-        if df_original.empty:
-            raise Exception("Google Sheet data is empty")
-            
+        if df_original.empty: raise Exception("Empty Data")
         data_source_info = "Google Sheets (Real-time 🟢)"
-
-    except Exception as e:
-        # กรณีที่ 3: ถ้า Google Sheet พัง ให้ลองใช้ไฟล์สำรอง (mpxo.xlsx) ในเครื่อง
+    except:
+        # ถ้าพัง ให้ใช้ไฟล์สำรอง
         if os.path.exists(DATA_FILE):
             df_original = load_and_prepare_data(DATA_FILE)
-            data_source_info = f"ไฟล์สำรองในระบบ: `{DATA_FILE}` (⚠️ เชื่อมต่อ Google Sheet ไม่ได้)"
-            st.warning(f"ไม่สามารถดึงข้อมูล Real-time ได้ ({e}) ระบบจึงแสดงผลข้อมูลจากไฟล์สำรองแทน")
-        else:
-            # กรณีที่ 4: ไม่เหลืออะไรให้ดึงแล้ว
-            st.error(f"⚠️ ไม่สามารถดึงข้อมูลจาก Google Sheets และไม่พบไฟล์สำรอง: {e}")
-            st.info("คำแนะนำ: ตรวจสอบสิทธิ์การแชร์ไฟล์ (Anyone with the link) หรืออัปโหลดไฟล์ใหม่")
-            st.stop()
+            data_source_info = f"ไฟล์สำรอง: {DATA_FILE}"
+            st.sidebar.warning("⚠️ เชื่อมต่อ Google Sheet ไม่ได้ (แสดงผล Offline)")
 
 if df_original.empty:
-    st.warning("ไม่พบข้อมูลในระบบ")
+    st.error("ไม่พบข้อมูลในระบบ")
     st.stop()
+
+# --- แสดงผลปุ่มเรืองแสง ---
+st.sidebar.markdown("---")
+min_d = df_original['date_col'].min().strftime('%d %b %y') if 'date_col' in df_original else "-"
+max_d = df_original['date_col'].max().strftime('%d %b %y') if 'date_col' in df_original else "-"
+
+if "Real-time" in data_source_info:
+    source_html = f'''<div class="realtime-badge"><div class="status-dot"></div>{data_source_info}</div>'''
+else:
+    source_html = f'<div style="color:grey;font-size:0.8rem;">📂 {data_source_info}</div>'
+
+st.sidebar.markdown(f"""
+<div class="sidebar-info">
+    <div class="label">ช่วงวันที่</div>
+    <div class="value">{min_d} - {max_d}</div>
+    {source_html}
+</div>
+""", unsafe_allow_html=True)
 
 # ==============================================================================
 # PLOTTING HELPERS
@@ -648,6 +652,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
