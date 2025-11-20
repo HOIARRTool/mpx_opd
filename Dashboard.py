@@ -42,8 +42,8 @@ st.sidebar.markdown(
 st.markdown(
     f'''
     <div style="display: flex; justify-content: flex-end; align-items: flex-start; gap: 20px; margin-bottom: 10px;">
-        <img src="{logo_urls[0]}" style="height: 50px; margin-top: 15px;">
-        <img src="{logo_urls[1]}" style="height: 70px;">
+        <img src="{logo_urls[0]}" style="height: 70px; margin-top: 20px;">
+        <img src="{logo_urls[1]}" style="height: 90px;">
     </div>
     ''',
     unsafe_allow_html=True
@@ -638,6 +638,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
