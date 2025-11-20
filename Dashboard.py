@@ -10,35 +10,38 @@ import os
 import io
 import hashlib
 import re
-
+from typing import Any
 # ==============================================================================
-# PAGE CONFIGURATION & STYLING
+# PAGE CONFIGURATION & HEADER
 # ==============================================================================
 st.set_page_config(layout="wide", page_title="Patient Experience Program | OPD")
 
-LOGO_URL = "https://raw.githubusercontent.com/HOIARRTool/hoiarr/refs/heads/main/logo1.png"
+# --- ส่วนแสดงผล Logo 2 อันด้านบน (เหมือน IPD) ---
+logo_urls = [
+    "https://github.com/HOIARRTool/appqtbi/blob/main/messageImage_1763018963411.jpg?raw=true",    
+    "https://mfu.ac.th/fileadmin/_processed_/6/7/csm_logo_mfu_3d_colour_15e5a7a50f.png"
+]
 
-st.sidebar.markdown(
-    f'''
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;">
-        <img src="{LOGO_URL}" style="height:40px;display:block;">
-        <h2 style="margin:0;font-size:1.5rem;">
-            <span class="gradient-text">Patient Experience Program [OPD]</span>
-        </h2>
-    </div>
-    ''',
-    unsafe_allow_html=True
-)
+# จัดวาง Logo: แบ่งคอลัมน์เป็น [Logo1 | Logo2 | พื้นที่ว่าง | Title] หรือจัดตามความสวยงาม
+# ในที่นี้ขอจัดแบบ: [Logo1] [Logo2] [Space]
+col1, col2, col3 = st.columns([1, 1, 8])
+
+with col1:
+    st.image(logo_urls[0], use_container_width=True)
+with col2:
+    st.image(logo_urls[1], use_container_width=True)
 
 st.markdown("""
 <style>
+  .gradient-text {
+    background-image: linear-gradient(45deg, #007bff, #6610f2, #6f42c1, #d63384, #dc3545);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    font-weight: 700; display: inline-block;
+  }
   .gauge-head { font-size: 18px; font-weight: 700; color: #111; line-height: 1.25; margin: 2px 4px 6px; white-space: normal; word-break: break-word; }
   .gauge-sub  { font-size: 16px; font-weight: 600; color: #374151; margin: 0 4px 6px; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
+  
+  /* Metric Box Styling */
   :root{ --metric-value-size: 2.6rem; --metric-label-size: calc(2.6rem * 2/3); }
   .metric-box{ border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px; text-align: center; color: #4f4f4f;
                box-shadow: 0 2px 6px rgba(0,0,0,.05); display: flex; flex-direction: column; justify-content: center;
@@ -51,12 +54,8 @@ st.markdown("""
   .metric-box.metric-box-6{ background:#e3f2fd !important; }
   .metric-box .label{ font-size: var(--metric-label-size) !important; font-weight: 700; line-height: 1.15; margin-bottom: 6px; color: #374151; }
   .metric-box .value{ font-size: var(--metric-value-size) !important; font-weight: 800; line-height: 1.1; }
-  @media (max-width: 900px){
-    :root{ --metric-value-size: 2.2rem; --metric-label-size: calc(2.2rem * 2/3); }
-  }
 </style>
 """, unsafe_allow_html=True)
-
 
 # ==============================================================================
 # DATA LOADING AND PREPARATION (รองรับอัปโหลด CSV/XLSX)
@@ -130,54 +129,58 @@ def load_and_prepare_data_from_bytes(file_bytes: bytes, filename: str) -> pd.Dat
     df['ปี'] = df['date_col'].dt.year
     return df
 
+# ==============================================================================
+# MAIN APP LOGIC
+# ==============================================================================
 
-# ---- อัปโหลดไฟล์ (แถบซ้าย) + Fallback เป็น mpxo.xlsx ----
-st.sidebar.markdown("### อัปโหลดไฟล์ข้อมูล")
-uploaded = st.sidebar.file_uploader("อัปโหลด .xlsx / .xls / .csv", type=["xlsx", "xls", "csv"])
+# --- Sidebar: File Uploader (Optional) ---
+st.sidebar.markdown("---")
+st.sidebar.header("จัดการข้อมูล")
+uploaded_file = st.sidebar.file_uploader("อัปโหลดไฟล์ใหม่ (กรณีไม่ใช้ Real-time)", type=['csv', 'xlsx'])
 
-DATA_FILE = "mpxo.xlsx"  # default
+# --- Data Source Setup ---
+DATA_FILE = "mpxo.xlsx"  # <--- 1. เพิ่มตรงนี้ครับ (ไฟล์สำรอง)
 
-if uploaded is not None:
-    # ใช้ไฟล์ที่อัปโหลดเป็นแหล่งข้อมูลทันที
-    file_bytes = uploaded.getbuffer().tobytes()
-    df_original = load_and_prepare_data_from_bytes(file_bytes, uploaded.name)
+# Google Sheet Config (OPD)
+SHEET_ID = '1TYo_SQTHgs97kfmBl9An0wEXdbFT0ofIC4v8TGzWyk8'
+SHEET_GID = '1745557312'
+GSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={SHEET_GID}"
 
-    # (ตัวเลือก) บันทึกสำเนาไฟล์อัปโหลดลงดิสก์
-    SAVE_DIR = "data_uploads"
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    save_path = os.path.join(SAVE_DIR, f"opd_latest{Path(uploaded.name).suffix.lower()}")
-    try:
-        with open(save_path, "wb") as w:
-            w.write(file_bytes)
-    except Exception as e:
-        st.info(f"บันทึกไฟล์อัปโหลดไม่สำเร็จ: {e}")
+df_original = pd.DataFrame()
+data_source_info = ""
 
-    # เขียนทับ DATA_FILE ให้เป็น .xlsx เสมอ (ถ้าต้องการแชร์ให้หน้าอื่น ๆ)
-    try:
-        if uploaded.name.lower().endswith((".xlsx", ".xls")):
-            with open(DATA_FILE, "wb") as w:
-                w.write(file_bytes)
-        elif uploaded.name.lower().endswith(".csv"):
-            tmp_df = pd.read_csv(io.BytesIO(file_bytes))
-            with pd.ExcelWriter(DATA_FILE, engine="openpyxl") as writer:
-                tmp_df.to_excel(writer, index=False, sheet_name="Sheet1")
-    except Exception as e:
-        st.info(f"บันทึกเป็น .xlsx ไม่สำเร็จ: {e}")
+# Priority: Uploaded File > Google Sheet > Local File (Fallback)
+if uploaded_file is not None:
+    # กรณีที่ 1: ผู้ใช้เลือกอัปโหลดไฟล์เอง
+    data_source_info = f"ไฟล์ที่อัปโหลด: `{uploaded_file.name}`"
+    df_original = load_and_prepare_data(uploaded_file)
 
 else:
-    # fallback: โหลด mpxo.xlsx ถ้ามี
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "rb") as f:
-            file_bytes = f.read()
-        df_original = load_and_prepare_data_from_bytes(file_bytes, DATA_FILE)
-    else:
-        df_original = pd.DataFrame()
+    # กรณีที่ 2: พยายามดึงจาก Google Sheet ก่อน (Real-time)
+    try:
+        df_original = load_and_prepare_data(GSHEET_URL)
+        
+        # เช็คว่าดึงมาแล้วว่างเปล่าหรือไม่ (บางที URL ถูกแต่ไม่มีข้อมูล)
+        if df_original.empty:
+            raise Exception("Google Sheet data is empty")
+            
+        data_source_info = "Google Sheets (Real-time 🟢)"
 
-# ถ้าไม่มีข้อมูลเลย ให้แจ้งเตือนและหยุด (ไม่มีหน้าอื่นแล้ว Landing คือ Dashboard)
+    except Exception as e:
+        # กรณีที่ 3: ถ้า Google Sheet พัง ให้ลองใช้ไฟล์สำรอง (mpxo.xlsx) ในเครื่อง
+        if os.path.exists(DATA_FILE):
+            df_original = load_and_prepare_data(DATA_FILE)
+            data_source_info = f"ไฟล์สำรองในระบบ: `{DATA_FILE}` (⚠️ เชื่อมต่อ Google Sheet ไม่ได้)"
+            st.warning(f"ไม่สามารถดึงข้อมูล Real-time ได้ ({e}) ระบบจึงแสดงผลข้อมูลจากไฟล์สำรองแทน")
+        else:
+            # กรณีที่ 4: ไม่เหลืออะไรให้ดึงแล้ว
+            st.error(f"⚠️ ไม่สามารถดึงข้อมูลจาก Google Sheets และไม่พบไฟล์สำรอง: {e}")
+            st.info("คำแนะนำ: ตรวจสอบสิทธิ์การแชร์ไฟล์ (Anyone with the link) หรืออัปโหลดไฟล์ใหม่")
+            st.stop()
+
 if df_original.empty:
-    st.warning("ยังไม่มีข้อมูล ให้ลองอัปโหลดไฟล์ทางแถบด้านซ้าย (.xlsx/.xls/.csv) หรือเพิ่มไฟล์ mpxo.xlsx ในโฟลเดอร์โปรเจกต์")
+    st.warning("ไม่พบข้อมูลในระบบ")
     st.stop()
-
 
 # ==============================================================================
 # PLOTTING HELPERS
@@ -560,5 +563,6 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
