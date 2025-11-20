@@ -331,7 +331,7 @@ def plot_gauge_for_column_numseries(
 # ==============================================================================
 # DASHBOARD (Landing Page)
 # ==============================================================================
-st.title("DASHBOARD (OPD)")
+st.title(f"DASHBOARD: {selected_department}")
 
 # --- Sidebar: ช่วงวันที่และตัวกรอง ---
 st.sidebar.markdown("---")
@@ -589,6 +589,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
