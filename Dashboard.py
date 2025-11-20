@@ -183,11 +183,6 @@ def load_and_prepare_data(source: Any) -> pd.DataFrame:
 # MAIN APP LOGIC
 # ==============================================================================
 
-# --- Sidebar: File Uploader (Optional) ---
-st.sidebar.markdown("---")
-st.sidebar.header("จัดการข้อมูล")
-uploaded_file = st.sidebar.file_uploader("อัปโหลดไฟล์ใหม่ (กรณีไม่ใช้ Real-time)", type=['csv', 'xlsx'])
-
 # --- Data Source Setup ---
 DATA_FILE = "mpxo.xlsx"  # <--- 1. เพิ่มตรงนี้ครับ (ไฟล์สำรอง)
 
@@ -643,6 +638,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
+
 
 
 
