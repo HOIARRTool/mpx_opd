@@ -31,7 +31,7 @@ st.sidebar.markdown(
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;">
         <img src="{LOGO_URL}" style="height:40px;display:block;">
         <h2 style="margin:0;font-size:1.5rem;">
-            <span class="gradient-text">Patient Experience (OPD)</span>
+            <span class="gradient-text">Patient Experience [OPD]</span>
         </h2>
     </div>
     ''',
@@ -132,25 +132,23 @@ def load_and_prepare_data(source: Any) -> pd.DataFrame:
         '(หากมี) ความไม่พึงพอใจกรุณาระบุรายละเอียด เพื่อเป็นประโยชน์ในการปรับปรุง': 'รายละเอียดความไม่พึงพอใจ',
         'ความคาดหวังต่อบริการของโรงพยาบาลในภาพรวม': 'ความคาดหวังต่อบริการ'
     }
-    df = df.rename(columns=lambda c: column_mapping.get(str(c).strip(), str(c).strip()))
+    df = df.rename(columns=lambda c: column_mapping.get(c.strip(), c.strip()))
 
-    # ----------------- Time fields -----------------
-    time_col = None
-    for cand in ['ประทับเวลา', 'Timestamp', 'เวลา', 'วันที่รับบริการ']:
-        if cand in df.columns:
-            time_col = cand
-            break
-    
-    if time_col:
-        # dayfirst=True สำคัญมากสำหรับ Google Sheets ไทย (ป้องกันวันที่หาย)
-        df['date_col'] = pd.to_datetime(df[time_col], dayfirst=True, errors='coerce')
+    # Ensure the timestamp column exists before processing
+    if 'ประทับเวลา' in df.columns:
+    # เพิ่ม dayfirst=True เพื่อบอกว่าเลขตัวหน้าคือ "วัน" (ไม่ใช่เดือน)
+        df['date_col'] = pd.to_datetime(df['ประทับเวลา'], dayfirst=True, errors='coerce')
+        df = df.dropna(subset=['date_col'])
         df = df.dropna(subset=['date_col'])
         df['เดือน'] = df['date_col'].dt.month
         df['ไตรมาส'] = df['date_col'].dt.quarter
         df['ปี'] = df['date_col'].dt.year
     else:
-        # st.warning("ไม่พบคอลัมน์เวลา (Timestamp) การกรองเวลาจะไม่ทำงาน")
+        # If no timestamp, create a dummy column to avoid errors, but show a warning
+        st.warning("ไม่พบคอลัมน์ 'ประทับเวลา' ในไฟล์ข้อมูล ตัวกรองเวลาอาจไม่ทำงาน")
         df['date_col'] = pd.NaT
+        df['เดือน'] = None
+        df['ไตรมาส'] = None
         df['ปี'] = None
     
     return df
@@ -589,12 +587,3 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
         st.dataframe(suggestions_df, use_container_width=True, hide_index=True)
     else:
         st.info("ไม่พบข้อมูลความคาดหวังในช่วงข้อมูลที่เลือก")
-
-
-
-
-
-
-
-
-
