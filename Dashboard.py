@@ -335,14 +335,36 @@ def plot_gauge_for_column_numseries(series_num, title, height=GAUGE_H, key=None)
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 
-def render_percent_gauge(title, pct, n, height=200, key=None, mode='high_good'):
+def render_percent_gauge(title, pct, n, height=GAUGE_H, key=None, mode='high_good'):
     st.markdown(f"<div class='gauge-head'>{title}</div><div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
+
     colors = ['#DC2626', '#EA580C', '#F59E0B', '#16A34A'] if mode == 'high_good' else ['#16A34A', '#F59E0B', '#EA580C', '#DC2626']
     ranges = [[0, 50], [50, 65], [65, 80], [80, 100]] if mode == 'high_good' else [[0, 5], [5, 10], [10, 20], [20, 100]]
     steps = [{'range': r, 'color': c} for r, c in zip(ranges, colors)]
-    fig = go.Figure(go.Indicator(mode="gauge+number", value=float(pct), number={'suffix': '%', 'valueformat': '.1f'}, gauge={'axis': {'range': [0, 100]}, 'bar': {'color': '#111827'}, 'steps': steps, 'threshold': {'line': {'color': '#111827', 'width': 2}, 'thickness': 0.6, 'value': float(pct)}}))
-    fig.update_layout(margin=dict(t=10,b=10,l=10,r=10), height=height)
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge",  # <- ไม่ใช้ gauge+number
+        value=float(pct),
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': '#111827'},
+            'steps': steps,
+            'threshold': {'line': {'color': '#111827', 'width': 2}, 'thickness': 0.6, 'value': float(pct)}
+        }
+    ))
+
+    # <- วางเลขให้อยู่ในเกจตลอด
+    fig.add_annotation(
+        x=0.5, y=NUM_Y, xref="paper", yref="paper",
+        text=f"{float(pct):.1f}%",
+        showarrow=False,
+        font=dict(size=int(height * NUM_SCALE_PCT), color="#6b7280")
+    )
+
+    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height)
     st.plotly_chart(fig, use_container_width=True, key=key)
+
 
 # --- Metrics Calc ---
 if 'ความพึงพอใจโดยรวม' in df_filtered.columns:
@@ -412,18 +434,19 @@ for i, (k, v) in enumerate(satisfaction_cols.items()):
 st.markdown("---")
 st.header("ส่วนที่ 3: ความตั้งใจในอนาคต")
 c1, c2, c3 = st.columns(3)
-def get_pct_val(col, val='ใช่'):
-    s = df_filtered[col].dropna().astype(str).str.strip()
-    return (s == val).sum() / s.size * 100 if s.size > 0 else 0, s.size
 
 p1, n1 = get_pct_val('กลับมารับบริการหรือไม่', 'ใช่')
-render_percent_gauge("1. กลับมารับบริการ (ใช่)", p1, n1, key="gp1")
+with c1:
+    render_percent_gauge("1. กลับมารับบริการ (ใช่)", p1, n1, height=GAUGE_H, key="gp1")
+
+p2, n2 = get_pct_val('แนะนำผู้อื่นหรือไม่', 'ใช่')
 with c2:
-    p2, n2 = get_pct_val('แนะนำผู้อื่นหรือไม่', 'ใช่')
-    render_percent_gauge("2. แนะนำผู้อื่น (ใช่)", p2, n2, key="gp2")
+    render_percent_gauge("2. แนะนำผู้อื่น (ใช่)", p2, n2, height=GAUGE_H, key="gp2")
+
+p3, n3 = get_pct_val('มีความไม่พึงพอใจหรือไม่', 'มี')
 with c3:
-    p3, n3 = get_pct_val('มีความไม่พึงพอใจหรือไม่', 'มี')
-    render_percent_gauge("3. ไม่พึงพอใจ (มี)", p3, n3, key="gp3", mode='low_good')
+    render_percent_gauge("3. ไม่พึงพอใจ (มี)", p3, n3, height=GAUGE_H, key="gp3", mode='low_good')
+
 
 st.markdown("---")
 st.subheader("รายละเอียดความไม่พึงพอใจ")
@@ -438,5 +461,6 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
     sug = df_filtered[df_filtered['ความคาดหวังต่อบริการ'].notna()]
     if not sug.empty: st.dataframe(sug[['หน่วยงาน', 'ความคาดหวังต่อบริการ']], use_container_width=True, hide_index=True)
     else: st.info("ไม่พบข้อมูล")
+
 
 
