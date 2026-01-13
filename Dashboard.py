@@ -334,7 +334,9 @@ def plot_gauge_for_column_numseries(series_num, title, height=GAUGE_H, key=None)
     fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height)
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-
+GAUGE_H = 230
+NUM_Y = 0.35
+NUM_SCALE_PCT = 0.26
 def render_percent_gauge(title, pct, n, height=GAUGE_H, key=None, mode='high_good'):
     st.markdown(f"<div class='gauge-head'>{title}</div><div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
 
@@ -432,6 +434,7 @@ for i, (k, v) in enumerate(satisfaction_cols.items()):
             plot_gauge_for_column_numseries(df_filtered[k].apply(normalize_to_1_5).astype('Float64'), v, key=f"g_{k}")
 
 st.markdown("---")
+
 def get_pct_val(df, col, val='ใช่'):
     if col not in df.columns:
         return 0.0, 0
@@ -465,6 +468,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
     sug = df_filtered[df_filtered['ความคาดหวังต่อบริการ'].notna()]
     if not sug.empty: st.dataframe(sug[['หน่วยงาน', 'ความคาดหวังต่อบริการ']], use_container_width=True, hide_index=True)
     else: st.info("ไม่พบข้อมูล")
+
 
 
 
