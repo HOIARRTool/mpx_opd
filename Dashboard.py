@@ -432,21 +432,25 @@ for i, (k, v) in enumerate(satisfaction_cols.items()):
             plot_gauge_for_column_numseries(df_filtered[k].apply(normalize_to_1_5).astype('Float64'), v, key=f"g_{k}")
 
 st.markdown("---")
+def get_pct_val(df, col, val='ใช่'):
+    if col not in df.columns:
+        return 0.0, 0
+    s = df[col].dropna().astype(str).str.strip()
+    return (s == val).sum() / s.size * 100 if s.size > 0 else 0.0, s.size
 st.header("ส่วนที่ 3: ความตั้งใจในอนาคต")
 c1, c2, c3 = st.columns(3)
 
-p1, n1 = get_pct_val('กลับมารับบริการหรือไม่', 'ใช่')
+p1, n1 = get_pct_val(df_filtered, 'กลับมารับบริการหรือไม่', 'ใช่')
 with c1:
     render_percent_gauge("1. กลับมารับบริการ (ใช่)", p1, n1, height=GAUGE_H, key="gp1")
 
-p2, n2 = get_pct_val('แนะนำผู้อื่นหรือไม่', 'ใช่')
+p2, n2 = get_pct_val(df_filtered, 'แนะนำผู้อื่นหรือไม่', 'ใช่')
 with c2:
     render_percent_gauge("2. แนะนำผู้อื่น (ใช่)", p2, n2, height=GAUGE_H, key="gp2")
 
-p3, n3 = get_pct_val('มีความไม่พึงพอใจหรือไม่', 'มี')
+p3, n3 = get_pct_val(df_filtered, 'มีความไม่พึงพอใจหรือไม่', 'มี')
 with c3:
     render_percent_gauge("3. ไม่พึงพอใจ (มี)", p3, n3, height=GAUGE_H, key="gp3", mode='low_good')
-
 
 st.markdown("---")
 st.subheader("รายละเอียดความไม่พึงพอใจ")
@@ -461,6 +465,7 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
     sug = df_filtered[df_filtered['ความคาดหวังต่อบริการ'].notna()]
     if not sug.empty: st.dataframe(sug[['หน่วยงาน', 'ความคาดหวังต่อบริการ']], use_container_width=True, hide_index=True)
     else: st.info("ไม่พบข้อมูล")
+
 
 
 
