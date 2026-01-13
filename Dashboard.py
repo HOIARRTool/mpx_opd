@@ -293,17 +293,47 @@ def render_average_heart_rating(avg_score, max_score=5, responses=None):
         else: hearts_html += '<span class="heart empty">♥</span>'
     labels_html = "".join([f'<span class="heart-label">{i}</span>' for i in range(1, max_score + 1)])
     st.markdown(f"""<style>.heart-wrap {{ width: 100%; border: 1px solid #eee; border-radius: 12px; padding: 16px; background: #fff; }} .heart {{ font-size: 40px; color: #E6E6E6; }} .heart.full {{ color: #e02424; }} .heart-labels {{ display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 6px; color: #6b7280; text-align: center; }}</style><div class="heart-wrap"><div style="font-weight:600;margin-bottom:10px;">Average rating ({avg_score:.2f})</div><div>{hearts_html}</div><div class="heart-labels">{labels_html}</div>{"<div style='color:#6b7280;font-size:0.9rem;margin-top:6px;'>คำตอบ " + f"{responses:,}" + " ข้อ</div>" if responses else ""}</div>""", unsafe_allow_html=True)
-
-def plot_gauge_for_column_numseries(series_num, title, height=200, key=None):
+GAUGE_H = 230
+NUM_Y = 0.35
+NUM_SCALE = 0.28
+def plot_gauge_for_column_numseries(series_num, title, height=GAUGE_H, key=None):
     s = series_num.dropna()
     if s.empty:
         st.info(f"ไม่มีข้อมูลสำหรับ '{title}'")
         return
-    avg = float(s.mean()); n = int(s.size)
+
+    avg = float(s.mean())
+    n = int(s.size)
+
     st.markdown(f"<div class='gauge-head'>{title}</div><div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
-    fig = go.Figure(go.Indicator(mode="gauge+number", value=avg, number={'valueformat': '.2f'}, gauge={'axis': {'range': [1, 5]}, 'bar': {'color': '#111827'}, 'steps': [{'range': [1, 2], 'color': '#DC2626'}, {'range': [2, 3], 'color': '#EA580C'}, {'range': [3, 4], 'color': '#F59E0B'}, {'range': [4, 5], 'color': '#16A34A'}], 'threshold': {'line': {'color': '#111827', 'width': 2}, 'thickness': 0.6, 'value': avg}}))
-    fig.update_layout(margin=dict(t=10,b=10,l=10,r=10), height=height)
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge",  # ไม่ให้ plotly จัดเลขเอง
+        value=avg,
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={
+            'axis': {'range': [1, 5]},
+            'bar': {'color': '#111827'},
+            'steps': [
+                {'range': [1, 2], 'color': '#DC2626'},
+                {'range': [2, 3], 'color': '#EA580C'},
+                {'range': [3, 4], 'color': '#F59E0B'},
+                {'range': [4, 5], 'color': '#16A34A'},
+            ],
+            'threshold': {'line': {'color': '#111827', 'width': 2}, 'thickness': 0.6, 'value': avg}
+        }
+    ))
+
+    fig.add_annotation(
+        x=0.5, y=NUM_Y, xref="paper", yref="paper",
+        text=f"{avg:.2f}",
+        showarrow=False,
+        font=dict(size=int(height * NUM_SCALE), color="#6b7280")
+    )
+
+    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height)
     st.plotly_chart(fig, use_container_width=True, key=key)
+
 
 def render_percent_gauge(title, pct, n, height=200, key=None, mode='high_good'):
     st.markdown(f"<div class='gauge-head'>{title}</div><div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
@@ -408,4 +438,5 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
     sug = df_filtered[df_filtered['ความคาดหวังต่อบริการ'].notna()]
     if not sug.empty: st.dataframe(sug[['หน่วยงาน', 'ความคาดหวังต่อบริการ']], use_container_width=True, hide_index=True)
     else: st.info("ไม่พบข้อมูล")
+
 
