@@ -5,6 +5,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
+pio.templates.default = "plotly_white"
 from pathlib import Path
 import os
 import re
@@ -13,7 +15,21 @@ from typing import Any
 # ==============================================================================
 # PAGE CONFIGURATION & HEADER
 # ==============================================================================
-st.set_page_config(layout="wide", page_title="Patient Experience Program | OPD")
+st.set_page_config(layout="wide", page_title="Patient Experience Program | OPD",
+                   initial_sidebar_state="expanded")
+
+# Keep white mode regardless of browser/OS preference.
+st.markdown("""
+<style>
+:root { color-scheme: light !important; }
+[data-testid="stAppViewContainer"], [data-testid="stMain"],
+[data-testid="stSidebar"], [data-testid="stHeader"] {
+  background-color: #FFFFFF !important; color: #172033 !important;
+}
+[data-testid="stMarkdownContainer"], [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] label { color: #172033 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # --- CSS & LOGO ---
 LOGO_URL = "https://raw.githubusercontent.com/HOIARRTool/hoiarr/main/logo1.png"
@@ -151,7 +167,67 @@ def load_and_prepare_data(source: Any) -> pd.DataFrame:
         '(หากมี) ความไม่พึงพอใจกรุณาระบุรายละเอียด เพื่อเป็นประโยชน์ในการปรับปรุง': 'รายละเอียดความไม่พึงพอใจ',
         'ความคาดหวังต่อบริการของโรงพยาบาลในภาพรวม': 'ความคาดหวังต่อบริการ'
     }
-    df = df.rename(columns=lambda c: column_mapping.get(str(c).strip(), str(c).strip()))
+    # The Google Form has both textual Q1–Q10 columns (M:V) and numeric
+    # "แบบประเมิน [...]" columns (AB:AK). Coalesce per respondent, not append rows.
+    # Prefer the explicit 1–5 answer; use the textual answer only if blank.
+    df.columns = [str(c).strip() for c in df.columns]
+    raw_cols = list(df.columns)
+    df = df.rename(columns=lambda c: column_mapping.get(c, c))
+
+    fallback_questions = {
+        "Q1_ความสะดวกขั้นตอน": ["ขั้นตอนการติดต่อและเข้ารับการรักษาในโรงพยาบาล"],
+        "Q2_ความสะดวกนัดหมาย": ["ขั้นตอนการนัดหมายเพื่อเข้ารับบริการ"],
+        "Q3_ระยะเวลารอคอย": ["ระยะเวลารอคอยเพื่อพบแพทย์"],
+        "Q4_การรับฟัง": ["รับฟังและเปิดโอกาสให้ท่านซักถาม"],
+        "Q5_ความชัดเจนข้อมูล": ["พยาบาลและเจ้าหน้าที่ให้ข้อมูลเกี่ยวกับขั้นตอน"],
+        "Q6_ความเท่าเทียม": ["บุคลากรทุกคนดูแลท่านอย่างเท่าเทียม"],
+        "Q7_ความสะอาดและสิ่งอำนวยความสะดวก": ["โรงพยาบาลมีความสะอาด"],
+        "Q8_ข้อมูลค่าใช้จ่าย": ["ก่อนรับบริการหรือการทำหัตถการ"],
+        "Q9_ข้อมูลการรักษา": ["ท่านได้รับข้อมูลการรักษา"],
+        "Q10_คำแนะนำกลับบ้าน": ["ท่านได้รับคำแนะนำอย่างชัดเจน"],
+    }
+    for canonical, tokens in fallback_questions.items():
+        matches = [c for c in df.columns
+                   if c != canonical and any(token in c for token in tokens)]
+        # Canonical first (numeric coded question), then textual versions.
+        candidates = ([canonical] if canonical in df.columns else []) + matches
+        if candidates:
+            merged = df[candidates[0]].replace(r"^\\s*$", pd.NA, regex=True)
+            for c in candidates[1:]:
+                merged = merged.combine_first(df[c].replace(r"^\\s*$", pd.NA, regex=True))
+            df[canonical] = merged
+
+    extra_questions = {
+        "ความเชื่อมั่นต่อบริการ": "ความเชื่อมั่นที่มีต่อบริการทางการแพทย์ของโรงพยาบาลในภาพรวม",
+        "ความพึงพอใจการจัดการข้อร้องเรียน":
+            "หากท่านเคยระบุความไม่พึงพอใจหรือส่งเรื่องร้องเรียน โปรดประเมินความพึงพอใจจากการจัดการข้อร้องเรียนดังกล่าว",
+    }
+    for canonical, source_col in extra_questions.items():
+        if source_col in df.columns:
+            df[canonical] = df[source_col]
+        elif canonical not in df.columns:
+            df[canonical] = pd.NA
+    # The sheet's demographic question numbering was revised (4–8).
+    demographic_aliases = {
+        "อายุ": ["4. อายุ", "2. อายุ"],
+        "ภูมิลำเนา": ["5. ภูมิลำเนา", "3. ภูมิลำเนา"],
+        "อาชีพ": ["6. อาชีพ", "4. อาชีพ"],
+        "สิทธิการรักษา": ["7. สิทธิในการรักษา", "5. สิทธิในการรักษา"],
+        "วันที่รับบริการ": ["8. วันที่มารับบริการ", "6. วันที่มารับบริการ"],
+    }
+    for canonical, aliases in demographic_aliases.items():
+        if canonical not in df.columns:
+            for alias in aliases:
+                if alias in df.columns:
+                    df[canonical] = df[alias]
+                    break
+
+    # Ensure an empty but expected column won't crash the dashboard.
+    for canonical in ["หน่วยงาน", "สุขภาพโดยรวม", "ความพึงพอใจโดยรวม",
+                      "กลับมารับบริการหรือไม่", "แนะนำผู้อื่นหรือไม่",
+                      "มีความไม่พึงพอใจหรือไม่"]:
+        if canonical not in df.columns:
+            df[canonical] = pd.NA
 
     # ----------------- Time fields -----------------
     if 'ประทับเวลา' in df.columns:
@@ -233,25 +309,25 @@ available_departments = ['ภาพรวมทั้งหมด']
 if 'หน่วยงาน' in df_original.columns:
     available_departments += sorted(df_original['หน่วยงาน'].dropna().unique().tolist())
 
-selected_department = st.sidebar.selectbox("เลือกหน่วยงาน:", available_departments)
-time_filter_option = st.sidebar.selectbox("เลือกช่วงเวลา:", ["ทั้งหมด", "เลือกตามปี", "เลือกตามไตรมาส", "เลือกตามเดือน"])
+selected_department = st.sidebar.selectbox("เลือกหน่วยงาน:", available_departments, key="opd_department")
+time_filter_option = st.sidebar.selectbox("เลือกช่วงเวลา:", ["ทั้งหมด", "เลือกตามปี", "เลือกตามไตรมาส", "เลือกตามเดือน"], key="opd_time_filter")
 
 # Apply Filters
 df_filtered = df_original.copy()
 if time_filter_option != "ทั้งหมด" and 'ปี' in df_original.columns:
     year_list = sorted(df_original['ปี'].dropna().unique(), reverse=True)
     if year_list:
-        selected_year = st.sidebar.selectbox("เลือกปี:", year_list)
+        selected_year = st.sidebar.selectbox("เลือกปี:", year_list, key="opd_year")
         df_filtered = df_filtered[df_filtered['ปี'] == selected_year]
 
         if time_filter_option == "เลือกตามไตรมาส":
             quarter_list = sorted(df_filtered['ไตรมาส'].dropna().unique())
-            selected_quarter = st.sidebar.selectbox("เลือกไตรมาส:", quarter_list)
+            selected_quarter = st.sidebar.selectbox("เลือกไตรมาส:", quarter_list, key="opd_quarter")
             df_filtered = df_filtered[df_filtered['ไตรมาส'] == selected_quarter]
         elif time_filter_option == "เลือกตามเดือน":
             month_map = {1: 'ม.ค.', 2: 'ก.พ.', 3: 'มี.ค.', 4: 'เม.ย.', 5: 'พ.ค.', 6: 'มิ.ย.', 7: 'ก.ค.', 8: 'ส.ค.', 9: 'ก.ย.', 10: 'ต.ค.', 11: 'พ.ย.', 12: 'ธ.ค.'}
             month_list = sorted(df_filtered['เดือน'].dropna().unique())
-            selected_month_num = st.sidebar.selectbox("เลือกเดือน:", month_list, format_func=lambda x: month_map.get(x, x))
+            selected_month_num = st.sidebar.selectbox("เลือกเดือน:", month_list, format_func=lambda x: month_map.get(x, x), key="opd_month")
             df_filtered = df_filtered[df_filtered['เดือน'] == selected_month_num]
 
 if selected_department != 'ภาพรวมทั้งหมด' and 'หน่วยงาน' in df_filtered.columns:
@@ -267,15 +343,34 @@ if df_filtered.empty:
 st.title(f"DASHBOARD: {selected_department}")
 
 # --- Helpers ---
-LIKERT_MAP = {'มากที่สุด': 5, 'มาก': 4, 'ปานกลาง': 3, 'น้อย': 2, 'น้อยมาก': 1, ' มากที่สุด': 5, ' มาก': 4, ' ปานกลาง': 3, ' น้อย': 2, ' น้อยมาก': 1}
+LIKERT_MAP = {
+    "มากที่สุด": 5, "มาก": 4, "ปานกลาง": 3, "น้อย": 2, "น้อยมาก": 1,
+    "ดีมาก": 5, "ดี": 4, "พอใช้": 3, "ควรปรับปรุง": 2, "ต้องปรับปรุง": 1,
+    "สะดวกมาก": 5, "สะดวก": 4, "เหมาะสมมาก": 5, "เหมาะสม": 4,
+    "ชัดเจนมาก": 5, "ชัดเจน": 4, "ชัดเจนพอควร": 4,
+}
 def normalize_to_1_5(x):
     if pd.isna(x): return pd.NA
-    s = str(x).strip()
-    if s in LIKERT_MAP: return LIKERT_MAP[s]
-    m = re.search(r'([1-5])', s)
-    if m: return int(m.group(1))
-    for k, v in LIKERT_MAP.items():
-        if k.strip() in s: return v
+    value = str(x).strip()
+    if not value or value.lower() in ("nan", "null", "none", "n/a", "-"):
+        return pd.NA
+    if value in LIKERT_MAP:
+        return LIKERT_MAP[value]
+    if re.fullmatch(r"[1-5](?:\\.0+)?", value):
+        return int(float(value))
+    # Only accept anchored prefixes, never extract an arbitrary digit from comments.
+    if "ไม่" in value and ("สะดวก" in value or "ชัดเจน" in value or "เหมาะสม" in value):
+        return 2
+    if value.startswith("มากที่สุด") or value.startswith("ดีมาก"):
+        return 5
+    if value.startswith("ปานกลาง") or value.startswith("พอใช้"):
+        return 3
+    if value.startswith("น้อยมาก") or value.startswith("ต้องปรับปรุง"):
+        return 1
+    if value.startswith("น้อย") or value.startswith("ควรปรับปรุง"):
+        return 2
+    if value.startswith("มาก") or value.startswith("ดี"):
+        return 4
     return pd.NA
 
 def render_average_heart_rating(avg_score, max_score=5, responses=None):
@@ -331,13 +426,16 @@ def plot_gauge_for_column_numseries(series_num, title, height=GAUGE_H, key=None)
         font=dict(size=int(height * NUM_SCALE), color="#6b7280")
     )
 
-    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height)
+    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#172033"))
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 GAUGE_H = 230
 NUM_Y = 0.35
 NUM_SCALE_PCT = 0.26
 def render_percent_gauge(title, pct, n, height=GAUGE_H, key=None, mode='high_good'):
+    if n == 0:
+        st.info(f"{title}: ยังไม่มีข้อมูลตอบคำถามนี้")
+        return
     st.markdown(f"<div class='gauge-head'>{title}</div><div class='gauge-sub'>n = {n}</div>", unsafe_allow_html=True)
 
     colors = ['#DC2626', '#EA580C', '#F59E0B', '#16A34A'] if mode == 'high_good' else ['#16A34A', '#F59E0B', '#EA580C', '#DC2626']
@@ -364,7 +462,7 @@ def render_percent_gauge(title, pct, n, height=GAUGE_H, key=None, mode='high_goo
         font=dict(size=int(height * NUM_SCALE_PCT), color="#6b7280")
     )
 
-    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height)
+    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=height, paper_bgcolor="white", plot_bgcolor="white", font=dict(color="#172033"))
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 
@@ -400,13 +498,14 @@ st.markdown("---")
 
 if selected_department == 'ภาพรวมทั้งหมด' and 'หน่วยงาน' in df_filtered.columns:
     st.subheader("สรุปจำนวนการประเมินตามหน่วยงาน")
-    st.dataframe(df_filtered['หน่วยงาน'].value_counts().reset_index().rename(columns={'index':'หน่วยงาน', 'หน่วยงาน':'จำนวน'}), use_container_width=True, hide_index=True)
+    dept_counts = df_filtered['หน่วยงาน'].value_counts().rename_axis('หน่วยงาน').reset_index(name='จำนวน')
+    st.dataframe(dept_counts, use_container_width=True, hide_index=True)
     st.markdown("---")
 
 # --- Satisfaction Detail ---
 st.subheader("ความพึงพอใจภาพรวม")
 cl, cr = st.columns(2)
-with cl: render_average_heart_rating(avg_score, responses=total_resp)
+with cl: render_average_heart_rating(avg_score, responses=int(df_filtered["คะแนนความพึงพอใจ"].count()))
 with cr:
     rc = df_filtered['คะแนนความพึงพอใจ'].dropna().round().astype(int).value_counts().reindex([1,2,3,4,5], fill_value=0).reset_index()
     rc.columns = ['คะแนน', 'จำนวน']
@@ -472,4 +571,22 @@ if 'ความคาดหวังต่อบริการ' in df_filtered
 
 
 
+
+
+
+st.markdown("---")
+st.header("ส่วนที่ 4: ความเชื่อมั่นและการจัดการข้อร้องเรียน")
+st.caption("คำนวณจากผู้ที่ตอบแต่ละข้อเท่านั้น; ไม่รวมช่องว่างและไม่นับข้อมูลย้อนหลังเป็นศูนย์")
+extra_metrics = [
+    ("ความเชื่อมั่นต่อบริการ", "1. ความเชื่อมั่นต่อบริการทางการแพทย์"),
+    ("ความพึงพอใจการจัดการข้อร้องเรียน", "2. ความพึงพอใจต่อการจัดการข้อร้องเรียน"),
+]
+extra_cols = st.columns(2)
+for i, (column, title) in enumerate(extra_metrics):
+    with extra_cols[i]:
+        scores = df_filtered[column].apply(normalize_to_1_5).astype("Float64")
+        plot_gauge_for_column_numseries(scores, title, height=230, key=f"opd_extra_{i}")
+        unanswered = df_filtered[column].notna().sum() - scores.notna().sum()
+        if unanswered:
+            st.caption(f"คำตอบที่ยังแปลงเป็นคะแนนไม่ได้: {int(unanswered):,} รายการ")
 
